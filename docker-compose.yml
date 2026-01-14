@@ -1,4 +1,69 @@
 services:
+  postgres:
+    image: postgres:15
+    container_name: scivise-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-scivise}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-scivise_password}
+      POSTGRES_DB: ${POSTGRES_DB:-scivise_db}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-scivise} -d ${POSTGRES_DB:-scivise_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - scivise-network
+
+  backend-api:
+    build:
+      context: ./backend-api
+      dockerfile: Dockerfile
+    container_name: scivise-backend-api
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql://scivise:scivise_password@postgres:5432/scivise_db}
+      BACKEND_API_HOST: ${BACKEND_API_HOST:-0.0.0.0}
+      BACKEND_API_PORT: ${BACKEND_API_PORT:-8000}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - scivise-network
+
+  ml-service:
+    build:
+      context: ./ml-service
+      dockerfile: Dockerfile
+    container_name: scivise-ml-service
+    restart: unless-stopped
+    environment:
+      ML_SERVICE_HOST: ${ML_SERVICE_HOST:-0.0.0.0}
+      ML_SERVICE_PORT: ${ML_SERVICE_PORT:-8001}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8001:8001"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8001/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - scivise-network
+
   frontend:
     build:
       context: ./frontend
@@ -8,9 +73,12 @@ services:
       - "5173:80"
     restart: unless-stopped
     networks:
-      - thinklist-network
+      - scivise-network
 
 networks:
-  thinklist-network:
+  scivise-network:
     driver: bridge
+
+volumes:
+  postgres-data:
 

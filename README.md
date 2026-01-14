@@ -10,12 +10,115 @@ Thinklist - это платформа для поиска, организаци�
 
 ```
 Thinklist/
-├── frontend/          # React + TypeScript фронтенд
-├── DOCS/              # Техническая документация проекта
-├── docker-compose.yml # Docker конфигурация
+├── frontend/                    # React + TypeScript фронтенд
+├── backend-api/                 # Backend API (FastAPI + SQLAlchemy + Alembic)
+├── ml-service/                  # ML-сервис (FastAPI)
+├── db/                          # Скрипты/миграции БД (если нужны вне backend-api)
+├── DOCS/                        # Техническая документация проекта
+├── docker-compose.yml           # Docker конфигурация (postgres + backend-api + ml-service + frontend)
 ├── BACKEND_IMPLEMENTATION_PLAN.md  # План реализации бэкенда
-└── DOCKER_SETUP.md    # Инструкция по запуску Docker
+└── DOCKER_SETUP.md              # Инструкция по запуску Docker
 ```
+
+## ER‑модель БД (MVP)
+
+ER‑модель следует требованиям из `DOCS/AGENTS.md` §5.
+
+- **users**
+  - `id` (PK)
+  - `email` (уникальный)
+  - `password_hash`
+  - `created_at`
+  - Связи:
+    - 1 ко многим с `events`
+    - 1 ко многим с `collections`
+    - 1 ко многим с `user_interests`
+
+- **sources**
+  - `id` (PK)
+  - `name`
+  - `code` (уникальный, например `"arxiv"`)
+  - `url`
+  - Связи:
+    - 1 ко многим с `papers`
+
+- **papers**
+  - `id` (PK)
+  - `source_id` (FK → `sources.id`)
+  - `external_id` (идентификатор в источнике, например arXiv ID)
+  - `title`
+  - `abstract`
+  - `authors`
+  - `published_at`
+  - `doi` (уникальный, если указан)
+  - `url` (уникальный, если указана)
+  - `content_hash` (уникальный хэш `title_normalized + first_author + year`)
+  - `created_at`
+  - Индексы:
+    - `papers(doi)`
+    - `papers(content_hash)`
+    - `papers(published_at)`
+  - Связи:
+    - многие ко многим с `tags` через `paper_tags`
+    - 1 ко многим с `events`
+    - многие ко многим с `collections` через `collection_items`
+
+- **tags**
+  - `id` (PK)
+  - `name` (уникальный)
+  - `slug` (уникальный)
+  - Связи:
+    - многие ко многим с `papers` через `paper_tags`
+    - 1 ко многим с `user_interests`
+
+- **paper_tags** (связующая таблица `papers` ↔ `tags`)
+  - `paper_id` (FK → `papers.id`)
+  - `tag_id` (FK → `tags.id`)
+  - PK: составной (`paper_id`, `tag_id`)
+
+- **user_interests**
+  - `id` (PK)
+  - `user_id` (FK → `users.id`)
+  - `tag_id` (FK → `tags.id`)
+  - `weight` (например, счётчик/вес интереса)
+  - `updated_at`
+  - Уникальность: (`user_id`, `tag_id`)
+
+- **events**
+  - `id` (PK)
+  - `user_id` (FK → `users.id`)
+  - `paper_id` (FK → `papers.id`)
+  - `type` (enum: `like`, `save`, `open`, `hide`)
+  - `created_at`
+  - Доп. индексы:
+    - `events(user_id, created_at)` — для быстрой выборки истории пользователя
+
+- **collections**
+  - `id` (PK)
+  - `user_id` (FK → `users.id`)
+  - `name`
+  - `description`
+  - `created_at`
+  - Уникальность: (`user_id`, `name`) — имя коллекции уникально в рамках пользователя
+  - Связи:
+    - 1 ко многим с `collection_items`
+
+- **collection_items**
+  - `id` (PK)
+  - `collection_id` (FK → `collections.id`)
+  - `paper_id` (FK → `papers.id`)
+  - `added_at`
+  - Уникальность: (`collection_id`, `paper_id`) — одна статья один раз в коллекции
+
+Диаграмма на уровне связей:
+
+- `users` 1—N `events`
+- `users` 1—N `collections`
+- `users` 1—N `user_interests`
+- `sources` 1—N `papers`
+- `papers` N—M `tags` через `paper_tags`
+- `users` N—M `tags` через `user_interests`
+- `collections` N—M `papers` через `collection_items`
 
 ## Основные функции
 
@@ -35,8 +138,13 @@ Thinklist/
 - Tailwind CSS
 - Lucide React
 
-### Бэкенд (планируется)
-См. [BACKEND_IMPLEMENTATION_PLAN.md](./BACKEND_IMPLEMENTATION_PLAN.md)
+### Бэкенд
+- FastAPI
+- SQLAlchemy + Alembic
+- PostgreSQL 15+
+- ML-сервис (FastAPI + scikit-learn)
+
+Подробный план: [BACKEND_IMPLEMENTATION_PLAN.md](./BACKEND_IMPLEMENTATION_PLAN.md)
 
 ## Быстрый старт
 
