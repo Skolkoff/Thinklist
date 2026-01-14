@@ -1,0 +1,16 @@
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: thinklist-frontend
+    ports:
+      - "5173:80"
+    restart: unless-stopped
+    networks:
+      - thinklist-network
+
+networks:
+  thinklist-network:
+    driver: bridge
+
