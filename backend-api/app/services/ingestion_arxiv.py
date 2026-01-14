@@ -11,16 +11,16 @@ from sqlalchemy.orm import Session
 from app.models import Paper, Source, Tag, IngestionRun
 from app.services.papers import create_or_get_paper
 
-ARXIV_API_URL = "http://export.arxiv.org/api/query"
+ARXIV_API_URL = "https://export.arxiv.org/api/query"
 
 
 def _build_query(categories: List[str]) -> str:
     """
-    Формирует search_query для arXiv API вида:
-    cat:cs.AI+OR+cat:cs.CL
+    Формирует search_query для arXiv API (httpx сам кодирует пробелы в '+'):
+    cat:cs.AI OR cat:cs.CL
     """
     parts = [f"cat:{c}" for c in categories]
-    return "+OR+".join(parts)
+    return " OR ".join(parts)
 
 
 def _parse_published(value: str) -> Optional[datetime]:
@@ -56,7 +56,13 @@ def fetch_arxiv_entries(categories: List[str], limit: int) -> List[Any]:
         "sortOrder": "descending",
     }
 
-    response = httpx.get(ARXIV_API_URL, params=params, timeout=30.0)
+    response = httpx.get(
+        ARXIV_API_URL,
+        params=params,
+        timeout=30.0,
+        follow_redirects=True,
+        headers={"User-Agent": "SciVisE/0.1 (admin ingestion)"},
+    )
     response.raise_for_status()
 
     feed = feedparser.parse(response.text)
@@ -239,5 +245,3 @@ def run_arxiv_ingestion(db: Session) -> Dict[str, Any]:
         "skipped": skipped,
         "failed": failed,
     }
-
-

@@ -5,5 +5,5 @@ alembic
 httpx==0.27.2
 feedparser==6.0.11
 psycopg2-binary==2.9.10
-
-
+email-validator==2.1.1
+PyJWT==2.8.0

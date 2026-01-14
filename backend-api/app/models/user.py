@@ -163,6 +163,10 @@ class EventType(str, Enum):
     HIDE = "hide"
 
 
+def _event_type_values(enum_cls: type[EventType]) -> list[str]:
+    return [e.value for e in enum_cls]
+
+
 class Event(Base):
     __tablename__ = "events"
     __table_args__ = (
@@ -176,7 +180,10 @@ class Event(Base):
     paper_id: Mapped[int] = mapped_column(
         ForeignKey("papers.id", ondelete="CASCADE"), nullable=False
     )
-    type: Mapped[EventType] = mapped_column(SqlEnum(EventType), nullable=False)
+    type: Mapped[EventType] = mapped_column(
+        SqlEnum(EventType, name="eventtype", values_callable=_event_type_values),
+        nullable=False,
+    )
     created_at: Mapped["DateTime"] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -246,4 +253,3 @@ class IngestionRun(Base):
     added: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     skipped: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     failed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-

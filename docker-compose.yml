@@ -29,6 +29,7 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgresql://scivise:scivise_password@postgres:5432/scivise_db}
       BACKEND_API_HOST: ${BACKEND_API_HOST:-0.0.0.0}
       BACKEND_API_PORT: ${BACKEND_API_PORT:-8000}
+      ML_SERVICE_URL: ${ML_SERVICE_URL:-http://ml-service:8001}
     depends_on:
       postgres:
         condition: service_healthy
@@ -49,6 +50,7 @@ services:
     container_name: scivise-ml-service
     restart: unless-stopped
     environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql://scivise:scivise_password@postgres:5432/scivise_db}
       ML_SERVICE_HOST: ${ML_SERVICE_HOST:-0.0.0.0}
       ML_SERVICE_PORT: ${ML_SERVICE_PORT:-8001}
     depends_on:
@@ -65,6 +67,8 @@ services:
       - scivise-network
 
   frontend:
+    profiles:
+      - frontend
     build:
       context: ./frontend
       dockerfile: Dockerfile
@@ -81,4 +85,3 @@ networks:
 
 volumes:
   postgres-data:
-
