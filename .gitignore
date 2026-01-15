@@ -8,7 +8,7 @@
 # Env files
 .env
 .env.*
-!.env.example
+.env.example
 
 # Logs
 *.log
@@ -50,4 +50,4 @@ BACKEND_IMPLEMENTATION_PLAN.md
 DOCKER_SETUP.md
 FRONTEND_REVIEW.md
 
-.helper
+helper
