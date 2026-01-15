@@ -1,0 +1,48 @@
+.DS_Store
+.idea/
+.vscode/
+
+# Env files
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Node/Vite
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+*.egg
+dist/
+build/
+
+# OS / temp
+*.swp
+*.swo
+*.tmp
+
+# Local data
+*.sqlite3
+
+
+DOCS
+BACKEND_IMPLEMENTATION_PLAN.md
+DOCKER_SETUP.md
+FRONTEND_REVIEW.md

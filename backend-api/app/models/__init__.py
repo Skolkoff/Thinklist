@@ -13,7 +13,11 @@ from app.models.user import (  # noqa: F401
     CollectionItem,
     EventType,
     IngestionRun,
+    Chat,
+    ChatParticipant,
+    Message,
+    MessageReaction,
+    UserBlock,
 )
-
 
 

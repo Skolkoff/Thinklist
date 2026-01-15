@@ -13,42 +13,43 @@
    docker-compose --version
    ```
 
-2. **Соберите и запустите контейнер**
+2. **Соберите и запустите контейнеры**
    ```bash
-   cd /Users/skolkoff/Desktop/Thinklist
-   docker-compose build
-   docker-compose up -d
+   cd /Users/sam/Desktop/Thinklist
+   docker compose build
+   docker compose up -d
    ```
 
 3. **Проверьте статус**
    ```bash
-   docker-compose ps
+   docker compose ps
    ```
 
 4. **Откройте в браузере**
-   - Фронтенд будет доступен по адресу: http://localhost:3000
+   - Фронтенд: http://localhost:5173
+   - Бэкенд: http://localhost:8000
 
 ## Полезные команды
 
 ### Просмотр логов
 ```bash
-docker-compose logs -f frontend
+docker compose logs -f frontend
 ```
 
 ### Остановка контейнера
 ```bash
-docker-compose down
+docker compose down
 ```
 
 ### Пересборка после изменений
 ```bash
-docker-compose build --no-cache
-docker-compose up -d
+docker compose build --no-cache
+docker compose up -d
 ```
 
 ### Очистка
 ```bash
-docker-compose down -v  # удаляет volumes
+docker compose down -v  # удаляет volumes
 docker system prune -a  # очистка неиспользуемых образов
 ```
 
@@ -73,25 +74,24 @@ Docker контейнер лучше использовать для production-
 
 ## Troubleshooting
 
-### Порт 3000 уже занят
+### Порт 5173 уже занят
 Измените порт в `docker-compose.yml`:
 ```yaml
 ports:
-  - "3001:80"  # используйте другой порт
+  - "5174:80"  # используйте другой порт
 ```
 
 ### Ошибки при сборке
 ```bash
 # Очистите кэш и пересоберите
-docker-compose build --no-cache
+docker compose build --no-cache
 ```
 
 ### Контейнер не запускается
 ```bash
 # Проверьте логи
-docker-compose logs frontend
+docker compose logs frontend
 
 # Проверьте, что Docker daemon запущен
 docker ps
 ```
-

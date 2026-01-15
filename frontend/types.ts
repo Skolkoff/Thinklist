@@ -14,6 +14,7 @@ export interface Article {
   source: string;
   publishedAt: string; // ISO Date
   doi: string;
+  url?: string;
   imageUrl: string;
   likes: number;
 }
@@ -24,6 +25,7 @@ export interface Collection {
   id: string;
   name: string;
   articleIds: string[];
+  articles?: Article[];
   coverImage?: string;
   isPrivate?: boolean;
   visibility: CollectionVisibility;

@@ -1,25 +1,59 @@
 
 import React, { useState } from 'react';
 import { Article } from '../types';
+import { api } from '../services/api';
 import { MoreHorizontal, Share2, Heart, ArrowUpRight } from 'lucide-react';
 
 interface ArticleCardProps {
   article: Article;
   onOpen: (article: Article) => void;
   onSave?: (article: Article) => void;
+  canInteract?: boolean;
+  onRequireAuth?: () => void;
 }
 
-export const ArticleCard: React.FC<ArticleCardProps> = ({ article, onOpen, onSave }) => {
+export const ArticleCard: React.FC<ArticleCardProps> = ({
+  article,
+  onOpen,
+  onSave,
+  canInteract = true,
+  onRequireAuth
+}) => {
   const [isHovered, setIsHovered] = useState(false);
   const [liked, setLiked] = useState(false);
 
   const handleLike = (e: React.MouseEvent) => {
     e.stopPropagation();
-    setLiked(!liked);
+    if (!canInteract) {
+      if (onRequireAuth) onRequireAuth();
+      return;
+    }
+    const next = !liked;
+    setLiked(next);
+    if (next) {
+      api.toggleLike(article.id).catch(() => {
+        setLiked(!next);
+      });
+    }
+  };
+
+  const handleOpenSource = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const fallback = article.doi
+      ? article.doi.startsWith('http')
+        ? article.doi
+        : `https://doi.org/${article.doi}`
+      : undefined;
+    const link = article.url || fallback;
+    if (link) window.open(link, '_blank');
   };
 
   const handleSave = (e: React.MouseEvent) => {
     e.stopPropagation();
+    if (!canInteract) {
+      if (onRequireAuth) onRequireAuth();
+      return;
+    }
     if (onSave) onSave(article);
   };
 
@@ -53,7 +87,7 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({ article, onOpen, onSav
 
           <div className="absolute bottom-3 right-3 flex gap-2">
             <button 
-              onClick={(e) => { e.stopPropagation(); window.open(article.doi, '_blank'); }}
+              onClick={handleOpenSource}
               className="bg-white p-2 rounded-full hover:bg-gray-100 shadow-sm text-gray-800"
               title="Open Source"
             >

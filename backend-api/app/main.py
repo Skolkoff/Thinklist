@@ -8,22 +8,30 @@ import httpx
 import jwt
 from jwt import ExpiredSignatureError, InvalidTokenError
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import and_, func, or_
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import get_settings
 from app.db.session import get_db  # dependency для сессии БД
 from app.services.ingestion_arxiv import run_arxiv_ingestion
 from app.models import (
+    Chat,
+    ChatParticipant,
     Event,
     EventType,
     IngestionRun,
+    Message,
+    MessageReaction,
     Paper,
+    Collection,
+    CollectionItem,
     Source,
     Tag,
     User,
     UserInterest,
+    UserBlock,
 )
 
 
@@ -34,10 +42,202 @@ CANDIDATE_POOL_MIN = 500
 CANDIDATE_POOL_MAX = 3000
 CANDIDATE_POOL_DEFAULT = 1000
 
+
+def _normalize_nickname(value: str) -> str:
+    raw = value.strip().lower().replace("@", "")
+    cleaned = "".join(ch for ch in raw if ch.isalnum() or ch in ("_", "-"))
+    return cleaned or "user"
+
+
+def _ensure_unique_nickname(db: Session, base: str) -> str:
+    candidate = _normalize_nickname(base)
+    if not db.query(User).filter(User.nickname == candidate).first():
+        return candidate
+    suffix = secrets.token_hex(3)
+    return f"{candidate}-{suffix}"
+
+
+def _split_authors(raw: str | None) -> list[str]:
+    if not raw:
+        return []
+    parts = [p.strip() for p in raw.split(";") if p.strip()]
+    return parts or [raw.strip()]
+
+
+def _author_objects(raw: str | None) -> list[dict]:
+    authors = _split_authors(raw)
+    payload = []
+    for name in authors:
+        author_id = hashlib.md5(name.encode("utf-8")).hexdigest()[:12]
+        payload.append({"id": author_id, "name": name})
+    return payload
+
+
+def _paper_image_url(paper: Paper) -> str:
+    return f"https://picsum.photos/seed/paper-{paper.id}/800/1000"
+
+
+def _paper_source_label(paper: Paper) -> str:
+    if paper.source and paper.source.name:
+        return paper.source.name
+    return "Unknown"
+
+
+def _paper_link_url(paper: Paper) -> str | None:
+    if paper.url:
+        return paper.url
+    if paper.doi:
+        doi = paper.doi
+        if doi.startswith("http://") or doi.startswith("https://"):
+            return doi
+        return f"https://doi.org/{doi}"
+    return None
+
+
+def _user_profile_dict(user: User, interests: list[str] | None = None) -> dict:
+    base_name = user.email.split("@")[0] if user.email else "user"
+    name = user.name or base_name.replace(".", " ").title()
+    nickname = user.nickname or _normalize_nickname(base_name)
+    avatar = user.avatar_url or f"https://i.pravatar.cc/150?u={user.id}"
+    return {
+        "id": str(user.id),
+        "name": name,
+        "nickname": nickname,
+        "avatarUrl": avatar,
+        "workplace": user.workplace,
+        "fieldOfStudy": user.field_of_study,
+        "bio": user.bio,
+        "interests": interests or [],
+    }
+
+
+def _get_user_interests(db: Session, user_id: int) -> list[str]:
+    rows = (
+        db.query(Tag.name)
+        .join(UserInterest, UserInterest.tag_id == Tag.id)
+        .filter(UserInterest.user_id == user_id)
+        .order_by(Tag.name.asc())
+        .all()
+    )
+    return [row[0] for row in rows]
+
+
+def _replace_user_interests(db: Session, user_id: int, tags: list[str]) -> list[str]:
+    normalized = {t.strip().lower() for t in tags if t and t.strip()}
+    db.query(UserInterest).filter(UserInterest.user_id == user_id).delete()
+    if not normalized:
+        db.commit()
+        return []
+
+    tag_rows = db.query(Tag).filter(Tag.normalized_name.in_(normalized)).all()
+    known = {tag.normalized_name: tag for tag in tag_rows}
+    for value in normalized:
+        tag = known.get(value)
+        if not tag:
+            tag = Tag(name=value, slug=value, normalized_name=value)
+            db.add(tag)
+            db.flush()
+        db.add(UserInterest(user_id=user_id, tag_id=tag.id))
+    db.commit()
+    return _get_user_interests(db, user_id)
+
+
+def _like_counts(db: Session, paper_ids: list[int]) -> dict[int, int]:
+    if not paper_ids:
+        return {}
+    rows = (
+        db.query(Event.paper_id, func.count(Event.id))
+        .filter(Event.type == EventType.LIKE, Event.paper_id.in_(paper_ids))
+        .group_by(Event.paper_id)
+        .all()
+    )
+    return {row[0]: row[1] for row in rows}
+
+
+def _paper_to_article(paper: Paper, like_map: dict[int, int]) -> dict:
+    published_at = paper.published_at or paper.created_at
+    tags = [tag.name for tag in paper.tags] if paper.tags else []
+    return {
+        "id": str(paper.id),
+        "title": paper.title,
+        "abstract": paper.abstract or "",
+        "authors": _author_objects(paper.authors),
+        "tags": tags,
+        "source": _paper_source_label(paper),
+        "publishedAt": published_at.isoformat() if published_at else None,
+        "doi": paper.doi or "",
+        "url": _paper_link_url(paper),
+        "imageUrl": _paper_image_url(paper),
+        "likes": like_map.get(paper.id, 0),
+    }
+
+
+def _collection_to_dict(
+    collection: Collection,
+    like_map: dict[int, int] | None = None,
+    include_items: bool = False,
+) -> dict:
+    article_ids = [str(item.paper_id) for item in collection.items]
+    cover = collection.cover_image
+    if not cover and collection.items:
+        first_item = collection.items[0]
+        if first_item.paper:
+            cover = _paper_image_url(first_item.paper)
+    payload = {
+        "id": str(collection.id),
+        "name": collection.name,
+        "articleIds": article_ids,
+        "coverImage": cover,
+        "isPrivate": collection.visibility == "private",
+        "visibility": collection.visibility,
+        "ownerId": str(collection.user_id),
+    }
+    if include_items:
+        like_map = like_map or {}
+        payload["articles"] = [
+            _paper_to_article(item.paper, like_map)
+            for item in collection.items
+            if item.paper is not None
+        ]
+    return payload
+
+
+def _message_reactions(message: Message, current_user_id: int) -> list[dict]:
+    buckets: dict[str, dict] = {}
+    for reaction in message.reactions:
+        item = buckets.setdefault(
+            reaction.emoji,
+            {"emoji": reaction.emoji, "count": 0, "userReacted": False},
+        )
+        item["count"] += 1
+        if reaction.user_id == current_user_id:
+            item["userReacted"] = True
+    return list(buckets.values())
+
+
+def _message_to_dict(message: Message, current_user_id: int) -> dict:
+    return {
+        "id": str(message.id),
+        "senderId": str(message.sender_id),
+        "text": message.text or "",
+        "type": message.type,
+        "attachment": message.attachment,
+        "timestamp": message.created_at.isoformat(),
+        "reactions": _message_reactions(message, current_user_id),
+    }
 app = FastAPI(
     title=settings.app_title,
     version=settings.app_version,
 )
+
+if settings.cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 
 @app.get("/health")
@@ -172,11 +372,60 @@ class UserInterestsIn(BaseModel):
 class RegisterIn(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8)
+    name: str | None = None
+    nickname: str | None = None
 
 
 class LoginIn(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8)
+
+
+class ChangePasswordIn(BaseModel):
+    old_password: str = Field(min_length=8)
+    new_password: str = Field(min_length=8)
+
+
+class UserProfileUpdate(BaseModel):
+    name: str | None = None
+    nickname: str | None = None
+    avatar_url: str | None = None
+    workplace: str | None = None
+    field_of_study: str | None = None
+    bio: str | None = None
+    interests: list[str] | None = None
+
+
+class CollectionCreateIn(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    visibility: str = "public"
+    description: str | None = None
+    cover_image: str | None = None
+
+
+class CollectionUpdateIn(BaseModel):
+    name: str | None = None
+    visibility: str | None = None
+    description: str | None = None
+    cover_image: str | None = None
+
+
+class CollectionItemIn(BaseModel):
+    paper_id: int
+
+
+class MessageSendIn(BaseModel):
+    text: str | None = None
+    type: str = "text"
+    attachment: dict | None = None
+
+
+class ReactionIn(BaseModel):
+    emoji: str = Field(min_length=1, max_length=16)
+
+
+class ChatCreateIn(BaseModel):
+    participant_id: int
 
 
 class EventIn(BaseModel):
@@ -235,30 +484,15 @@ def feed(
     Feed: guest или user (если передан X-User-Id).
     Сортировка по свежести (published_at DESC) с курсорной пагинацией.
     """
-    query = db.query(Paper).filter(Paper.published_at.isnot(None))
+    query = (
+        db.query(Paper)
+        .options(selectinload(Paper.tags), selectinload(Paper.source))
+        .filter(Paper.published_at.isnot(None))
+    )
 
     user_id = _get_optional_user_id(request, db)
+    hidden_exists = None
     if user_id is not None:
-        interest_tag_ids = [
-            row[0]
-            for row in db.query(UserInterest.tag_id)
-            .filter(UserInterest.user_id == user_id)
-            .all()
-        ]
-        if not interest_tag_ids:
-            return {"items": [], "next_cursor": None}
-
-        interest_ids_subq = (
-            db.query(Paper.id)
-            .join(Paper.tags)
-            .filter(Tag.id.in_(interest_tag_ids))
-            .distinct()
-            .subquery()
-        )
-        base_query = db.query(Paper).join(
-            interest_ids_subq, Paper.id == interest_ids_subq.c.id
-        )
-
         hidden_exists = (
             db.query(Event.id)
             .filter(
@@ -268,99 +502,115 @@ def feed(
             )
             .exists()
         )
-        base_query = base_query.filter(~hidden_exists)
 
-        candidate_limit = max(
-            CANDIDATE_POOL_MIN, min(CANDIDATE_POOL_DEFAULT, CANDIDATE_POOL_MAX)
-        )
-        candidate_ids = [
+        interest_tag_ids = [
             row[0]
-            for row in base_query.with_entities(Paper.id)
-            .order_by(Paper.published_at.desc(), Paper.id.desc())
-            .limit(candidate_limit)
+            for row in db.query(UserInterest.tag_id)
+            .filter(UserInterest.user_id == user_id)
             .all()
         ]
-        logger.info(
-            "candidate_pool_size=%s user_id=%s", len(candidate_ids), user_id
-        )
-        if not candidate_ids:
-            return {"items": [], "next_cursor": None}
-
-        query = query.filter(Paper.id.in_(candidate_ids))
-
-        positive_ids = [
-            row[0]
-            for row in db.query(Event.paper_id)
-            .filter(
-                Event.user_id == user_id,
-                Event.type.in_([EventType.LIKE, EventType.SAVE]),
+        if interest_tag_ids:
+            interest_ids_subq = (
+                db.query(Paper.id)
+                .join(Paper.tags)
+                .filter(Tag.id.in_(interest_tag_ids))
+                .distinct()
+                .subquery()
             )
-            .distinct()
-            .all()
-        ]
+            base_query = db.query(Paper).join(
+                interest_ids_subq, Paper.id == interest_ids_subq.c.id
+            )
+            base_query = base_query.filter(~hidden_exists)
 
-        ranked_ids: list[int] | None = None
-        if positive_ids:
-            try:
-                response = httpx.post(
-                    f"{settings.ml_service_url}/ml/rank",
-                    json={
-                        "user_id": user_id,
-                        "positive_paper_ids": positive_ids,
-                        "candidate_paper_ids": candidate_ids,
-                    },
-                    timeout=settings.ml_request_timeout_seconds,
-                )
-                response.raise_for_status()
-                payload = response.json()
-                ranked = payload.get("ranked") or []
-                ranked_ids = [
-                    item["paper_id"]
-                    for item in ranked
-                    if "paper_id" in item
-                ]
-            except Exception as exc:
-                logger.warning("ml_rank_failed user_id=%s error=%s", user_id, exc)
-                ranked_ids = None
-
-        if ranked_ids:
-            offset = 0
-            if cursor:
-                offset = _parse_ml_cursor(cursor)
-
-            ordered_ids = ranked_ids
-            page_ids = ordered_ids[offset : offset + limit]
-            if not page_ids:
-                return {"items": [], "next_cursor": None}
-
-            papers = (
-                db.query(Paper)
-                .filter(Paper.id.in_(page_ids))
+            candidate_limit = max(
+                CANDIDATE_POOL_MIN, min(CANDIDATE_POOL_DEFAULT, CANDIDATE_POOL_MAX)
+            )
+            candidate_ids = [
+                row[0]
+                for row in base_query.with_entities(Paper.id)
+                .order_by(Paper.published_at.desc(), Paper.id.desc())
+                .limit(candidate_limit)
                 .all()
+            ]
+            logger.info(
+                "candidate_pool_size=%s user_id=%s", len(candidate_ids), user_id
             )
-            by_id = {paper.id: paper for paper in papers}
-            items = [by_id[pid] for pid in page_ids if pid in by_id]
+            if not candidate_ids:
+                query = query.filter(~hidden_exists)
+            else:
+                query = query.filter(Paper.id.in_(candidate_ids))
 
-            next_cursor = None
-            next_offset = offset + len(page_ids)
-            if next_offset < len(ordered_ids):
-                next_cursor = f"ml:{next_offset}"
+            if candidate_ids:
+                positive_ids = [
+                    row[0]
+                    for row in db.query(Event.paper_id)
+                    .filter(
+                        Event.user_id == user_id,
+                        Event.type.in_([EventType.LIKE, EventType.SAVE]),
+                    )
+                    .distinct()
+                    .all()
+                ]
 
-            return {
-                "items": [
-                    {
-                        "id": paper.id,
-                        "title": paper.title,
-                        "abstract": paper.abstract,
-                        "authors": paper.authors,
-                        "published_at": paper.published_at,
-                        "doi": paper.doi,
-                        "url": paper.url,
+                ranked_ids: list[int] | None = None
+                if positive_ids:
+                    try:
+                        response = httpx.post(
+                            f"{settings.ml_service_url}/ml/rank",
+                            json={
+                                "user_id": user_id,
+                                "positive_paper_ids": positive_ids,
+                                "candidate_paper_ids": candidate_ids,
+                            },
+                            timeout=settings.ml_request_timeout_seconds,
+                        )
+                        response.raise_for_status()
+                        payload = response.json()
+                        ranked = payload.get("ranked") or []
+                        ranked_ids = [
+                            item["paper_id"]
+                            for item in ranked
+                            if "paper_id" in item
+                        ]
+                    except Exception as exc:
+                        logger.warning(
+                            "ml_rank_failed user_id=%s error=%s", user_id, exc
+                        )
+                        ranked_ids = None
+
+                if ranked_ids:
+                    offset = 0
+                    if cursor:
+                        offset = _parse_ml_cursor(cursor)
+
+                    ordered_ids = ranked_ids
+                    page_ids = ordered_ids[offset : offset + limit]
+                    if not page_ids:
+                        return {"items": [], "next_cursor": None}
+
+                    papers = (
+                        db.query(Paper)
+                        .options(selectinload(Paper.tags), selectinload(Paper.source))
+                        .filter(Paper.id.in_(page_ids))
+                        .all()
+                    )
+                    by_id = {paper.id: paper for paper in papers}
+                    items = [by_id[pid] for pid in page_ids if pid in by_id]
+                    like_map = _like_counts(db, [paper.id for paper in items])
+
+                    next_cursor = None
+                    next_offset = offset + len(page_ids)
+                    if next_offset < len(ordered_ids):
+                        next_cursor = f"ml:{next_offset}"
+
+                    return {
+                        "items": [
+                            _paper_to_article(paper, like_map) for paper in items
+                        ],
+                        "next_cursor": next_cursor,
                     }
-                    for paper in items
-                ],
-                "next_cursor": next_cursor,
-            }
+        else:
+            query = query.filter(~hidden_exists)
 
     if cursor:
         cursor_ts, cursor_id = _parse_cursor(cursor)
@@ -378,24 +628,14 @@ def feed(
     )
 
     items = papers[:limit]
+    like_map = _like_counts(db, [paper.id for paper in items])
     next_cursor = None
     if len(papers) > limit and items:
         last = items[-1]
         next_cursor = f"{last.published_at.isoformat()}|{last.id}"
 
     return {
-        "items": [
-            {
-                "id": paper.id,
-                "title": paper.title,
-                "abstract": paper.abstract,
-                "authors": paper.authors,
-                "published_at": paper.published_at,
-                "doi": paper.doi,
-                "url": paper.url,
-            }
-            for paper in items
-        ],
+        "items": [_paper_to_article(paper, like_map) for paper in items],
         "next_cursor": next_cursor,
     }
 
@@ -403,40 +643,53 @@ def feed(
 @app.get("/search")
 def search(
     request: Request,
-    q: str = Query(..., min_length=2),
+    q: str | None = Query(None, min_length=2),
     limit: int = Query(20, ge=1, le=100),
-    tag: str | None = None,
+    tags: list[str] | None = Query(None),
     source: str | None = None,
     db: Session = Depends(get_db),
 ) -> dict:
     """
     Поиск по title + abstract (PostgreSQL full-text).
     """
-    ts_vector = func.to_tsvector(
-        "english",
-        func.coalesce(Paper.title, "") + " " + func.coalesce(Paper.abstract, ""),
+    query = db.query(Paper).options(
+        selectinload(Paper.tags), selectinload(Paper.source)
     )
-    ts_query = func.plainto_tsquery("english", q)
-    rank = func.ts_rank(ts_vector, ts_query)
-
-    query = db.query(Paper).filter(ts_vector.op("@@")(ts_query))
-
-    if tag:
-        tag_value = tag.strip().lower()
-        tag_ids_subq = (
-            db.query(Paper.id)
-            .join(Paper.tags)
-            .filter(
-                or_(
-                    Tag.normalized_name == tag_value,
-                    Tag.slug == tag_value,
-                    Tag.name == tag,
-                )
-            )
-            .distinct()
-            .subquery()
+    rank = None
+    if q:
+        ts_vector = func.to_tsvector(
+            "english",
+            func.coalesce(Paper.title, "") + " " + func.coalesce(Paper.abstract, ""),
         )
-        query = query.join(tag_ids_subq, Paper.id == tag_ids_subq.c.id)
+        ts_query = func.plainto_tsquery("english", q)
+        rank = func.ts_rank(ts_vector, ts_query)
+        query = query.filter(ts_vector.op("@@")(ts_query))
+
+    if tags:
+        normalized = []
+        for tag in tags:
+            if not tag:
+                continue
+            if "," in tag:
+                normalized.extend([t.strip() for t in tag.split(",") if t.strip()])
+            else:
+                normalized.append(tag.strip())
+        normalized = [t.lower() for t in normalized if t]
+        if normalized:
+            tag_ids_subq = (
+                db.query(Paper.id)
+                .join(Paper.tags)
+                .filter(
+                    or_(
+                        Tag.normalized_name.in_(normalized),
+                        Tag.slug.in_(normalized),
+                        func.lower(Tag.name).in_(normalized),
+                    )
+                )
+                .distinct()
+                .subquery()
+            )
+            query = query.join(tag_ids_subq, Paper.id == tag_ids_subq.c.id)
 
     if source:
         source_value = source.strip()
@@ -458,26 +711,45 @@ def search(
         )
         query = query.filter(~hidden_exists)
 
-    papers = (
-        query.order_by(rank.desc(), Paper.published_at.desc(), Paper.id.desc())
-        .limit(limit)
-        .all()
-    )
+    if rank is not None:
+        query = query.order_by(rank.desc(), Paper.published_at.desc(), Paper.id.desc())
+    else:
+        query = query.order_by(Paper.published_at.desc(), Paper.id.desc())
 
-    return {
-        "items": [
-            {
-                "id": paper.id,
-                "title": paper.title,
-                "abstract": paper.abstract,
-                "authors": paper.authors,
-                "published_at": paper.published_at,
-                "doi": paper.doi,
-                "url": paper.url,
-            }
-            for paper in papers
-        ]
-    }
+    papers = query.limit(limit).all()
+    like_map = _like_counts(db, [paper.id for paper in papers])
+
+    return {"items": [_paper_to_article(paper, like_map) for paper in papers]}
+
+
+@app.get("/papers/{paper_id}")
+def get_paper(paper_id: int, db: Session = Depends(get_db)) -> dict:
+    paper = (
+        db.query(Paper)
+        .options(selectinload(Paper.tags), selectinload(Paper.source))
+        .filter(Paper.id == paper_id)
+        .one_or_none()
+    )
+    if not paper:
+        raise HTTPException(status_code=404, detail="Paper not found")
+    like_map = _like_counts(db, [paper.id])
+    return _paper_to_article(paper, like_map)
+
+
+@app.get("/tags")
+def list_tags(db: Session = Depends(get_db)) -> dict:
+    tags = db.query(Tag).order_by(Tag.name.asc()).all()
+    return {"items": [tag.name for tag in tags]}
+
+
+@app.get("/auth/nickname-available")
+def nickname_available(
+    nickname: str = Query(..., min_length=2),
+    db: Session = Depends(get_db),
+) -> dict:
+    normalized = _normalize_nickname(nickname)
+    exists = db.query(User.id).filter(User.nickname == normalized).first()
+    return {"nickname": normalized, "available": not bool(exists)}
 
 
 @app.post("/auth/register", status_code=201)
@@ -486,9 +758,16 @@ def register(payload: RegisterIn, db: Session = Depends(get_db)) -> dict:
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
 
+    base_name = payload.email.split("@")[0]
+    name = payload.name or base_name.replace(".", " ").title()
+    nickname_base = payload.nickname or base_name
+    nickname = _ensure_unique_nickname(db, nickname_base)
+
     user = User(
         email=payload.email,
         password_hash=_hash_password(payload.password),
+        name=name,
+        nickname=nickname,
     )
     db.add(user)
     db.commit()
@@ -512,11 +791,89 @@ def login(payload: LoginIn, db: Session = Depends(get_db)) -> dict:
 
 
 @app.get("/me")
-def me(current_user: User = Depends(get_current_user)) -> dict:
+def me(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    interests = _get_user_interests(db, current_user.id)
+    return _user_profile_dict(current_user, interests=interests)
+
+
+@app.put("/me")
+def update_me(
+    payload: UserProfileUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    if payload.name is not None:
+        current_user.name = payload.name
+    if payload.nickname is not None:
+        normalized = _normalize_nickname(payload.nickname)
+        if normalized != current_user.nickname:
+            current_user.nickname = _ensure_unique_nickname(db, normalized)
+    if payload.avatar_url is not None:
+        current_user.avatar_url = payload.avatar_url
+    if payload.workplace is not None:
+        current_user.workplace = payload.workplace
+    if payload.field_of_study is not None:
+        current_user.field_of_study = payload.field_of_study
+    if payload.bio is not None:
+        current_user.bio = payload.bio
+    db.commit()
+    db.refresh(current_user)
+
+    interests = (
+        _replace_user_interests(db, current_user.id, payload.interests)
+        if payload.interests is not None
+        else _get_user_interests(db, current_user.id)
+    )
+    return _user_profile_dict(current_user, interests=interests)
+
+
+@app.post("/auth/change-password")
+def change_password(
+    payload: ChangePasswordIn,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    if not _verify_password(payload.old_password, current_user.password_hash):
+        raise HTTPException(status_code=400, detail="Invalid current password")
+    current_user.password_hash = _hash_password(payload.new_password)
+    db.commit()
+    return {"status": "ok"}
+
+
+@app.get("/users/{user_id}")
+def get_user_profile(user_id: int, db: Session = Depends(get_db)) -> dict:
+    user = db.query(User).filter(User.id == user_id).one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    interests = _get_user_interests(db, user.id)
+    return _user_profile_dict(user, interests=interests)
+
+
+@app.get("/friends")
+def list_friends(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    blocked_ids = [
+        row[0]
+        for row in db.query(UserBlock.blocked_id)
+        .filter(UserBlock.blocker_id == current_user.id)
+        .all()
+    ]
+    users = (
+        db.query(User)
+        .filter(User.id != current_user.id, ~User.id.in_(blocked_ids))
+        .order_by(User.created_at.desc())
+        .all()
+    )
     return {
-        "id": current_user.id,
-        "email": current_user.email,
-        "created_at": current_user.created_at,
+        "items": [
+            _user_profile_dict(user, interests=_get_user_interests(db, user.id))
+            for user in users
+        ]
     }
 
 
@@ -529,6 +886,23 @@ def create_event(
     paper = db.query(Paper).filter(Paper.id == payload.paper_id).one_or_none()
     if not paper:
         raise HTTPException(status_code=404, detail="Paper not found")
+
+    existing = (
+        db.query(Event)
+        .filter(
+            Event.user_id == current_user.id,
+            Event.paper_id == payload.paper_id,
+            Event.type == payload.action,
+        )
+        .one_or_none()
+    )
+    if existing:
+        return {
+            "id": existing.id,
+            "paper_id": existing.paper_id,
+            "action": existing.type,
+            "created_at": existing.created_at,
+        }
 
     event = Event(
         user_id=current_user.id,
@@ -554,24 +928,15 @@ def me_likes(
 ) -> dict:
     papers = (
         db.query(Paper)
+        .options(selectinload(Paper.tags), selectinload(Paper.source))
         .join(Event, Event.paper_id == Paper.id)
         .filter(Event.user_id == current_user.id, Event.type == EventType.LIKE)
         .order_by(Event.created_at.desc())
         .all()
     )
+    like_map = _like_counts(db, [paper.id for paper in papers])
     return {
-        "items": [
-            {
-                "id": paper.id,
-                "title": paper.title,
-                "abstract": paper.abstract,
-                "authors": paper.authors,
-                "published_at": paper.published_at,
-                "doi": paper.doi,
-                "url": paper.url,
-            }
-            for paper in papers
-        ]
+        "items": [_paper_to_article(paper, like_map) for paper in papers]
     }
 
 
@@ -582,25 +947,436 @@ def me_saved(
 ) -> dict:
     papers = (
         db.query(Paper)
+        .options(selectinload(Paper.tags), selectinload(Paper.source))
         .join(Event, Event.paper_id == Paper.id)
         .filter(Event.user_id == current_user.id, Event.type == EventType.SAVE)
         .order_by(Event.created_at.desc())
         .all()
     )
+    like_map = _like_counts(db, [paper.id for paper in papers])
+    return {
+        "items": [_paper_to_article(paper, like_map) for paper in papers]
+    }
+
+
+@app.get("/collections")
+def list_collections(
+    include_items: bool = Query(False),
+    user_id: int | None = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    target_user_id = user_id or current_user.id
+    query = (
+        db.query(Collection)
+        .options(selectinload(Collection.items).selectinload(CollectionItem.paper))
+        .filter(Collection.user_id == target_user_id)
+    )
+    if target_user_id != current_user.id:
+        query = query.filter(Collection.visibility != "private")
+
+    collections = query.order_by(Collection.created_at.desc()).all()
+    like_map: dict[int, int] = {}
+    if include_items:
+        paper_ids = [
+            item.paper_id
+            for collection in collections
+            for item in collection.items
+        ]
+        like_map = _like_counts(db, paper_ids)
     return {
         "items": [
-            {
-                "id": paper.id,
-                "title": paper.title,
-                "abstract": paper.abstract,
-                "authors": paper.authors,
-                "published_at": paper.published_at,
-                "doi": paper.doi,
-                "url": paper.url,
-            }
-            for paper in papers
+            _collection_to_dict(
+                col,
+                like_map=like_map,
+                include_items=include_items,
+            )
+            for col in collections
         ]
     }
+
+
+@app.post("/collections", status_code=201)
+def create_collection(
+    payload: CollectionCreateIn,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    visibility = payload.visibility or "public"
+    if visibility not in {"public", "private", "friends", "followers"}:
+        visibility = "public"
+    collection = Collection(
+        user_id=current_user.id,
+        name=payload.name,
+        description=payload.description,
+        visibility=visibility,
+        cover_image=payload.cover_image,
+    )
+    db.add(collection)
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Collection already exists")
+    db.refresh(collection)
+    return _collection_to_dict(collection)
+
+
+@app.put("/collections/{collection_id}")
+def update_collection(
+    collection_id: int,
+    payload: CollectionUpdateIn,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    collection = (
+        db.query(Collection)
+        .options(selectinload(Collection.items).selectinload(CollectionItem.paper))
+        .filter(Collection.id == collection_id)
+        .one_or_none()
+    )
+    if not collection:
+        raise HTTPException(status_code=404, detail="Collection not found")
+    if collection.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    if payload.name is not None:
+        collection.name = payload.name
+    if payload.description is not None:
+        collection.description = payload.description
+    if payload.visibility is not None:
+        if payload.visibility not in {"public", "private", "friends", "followers"}:
+            raise HTTPException(status_code=400, detail="Invalid visibility")
+        collection.visibility = payload.visibility
+    if payload.cover_image is not None:
+        collection.cover_image = payload.cover_image
+
+    db.commit()
+    db.refresh(collection)
+    return _collection_to_dict(collection)
+
+
+@app.delete("/collections/{collection_id}")
+def delete_collection(
+    collection_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    collection = db.query(Collection).filter(Collection.id == collection_id).one_or_none()
+    if not collection:
+        raise HTTPException(status_code=404, detail="Collection not found")
+    if collection.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    db.delete(collection)
+    db.commit()
+    return {"status": "ok"}
+
+
+@app.post("/collections/{collection_id}/items", status_code=201)
+def add_collection_item(
+    collection_id: int,
+    payload: CollectionItemIn,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    collection = db.query(Collection).filter(Collection.id == collection_id).one_or_none()
+    if not collection:
+        raise HTTPException(status_code=404, detail="Collection not found")
+    if collection.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    paper = db.query(Paper).filter(Paper.id == payload.paper_id).one_or_none()
+    if not paper:
+        raise HTTPException(status_code=404, detail="Paper not found")
+
+    existing = (
+        db.query(CollectionItem)
+        .filter(
+            CollectionItem.collection_id == collection_id,
+            CollectionItem.paper_id == payload.paper_id,
+        )
+        .one_or_none()
+    )
+    if not existing:
+        db.add(
+            CollectionItem(collection_id=collection_id, paper_id=payload.paper_id)
+        )
+        if not collection.cover_image:
+            collection.cover_image = _paper_image_url(paper)
+
+        save_event = (
+            db.query(Event)
+            .filter(
+                Event.user_id == current_user.id,
+                Event.paper_id == payload.paper_id,
+                Event.type == EventType.SAVE,
+            )
+            .one_or_none()
+        )
+        if not save_event:
+            db.add(
+                Event(
+                    user_id=current_user.id,
+                    paper_id=payload.paper_id,
+                    type=EventType.SAVE,
+                )
+            )
+    db.commit()
+    return {"status": "ok"}
+
+
+@app.delete("/collections/{collection_id}/items/{paper_id}")
+def remove_collection_item(
+    collection_id: int,
+    paper_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    collection = db.query(Collection).filter(Collection.id == collection_id).one_or_none()
+    if not collection:
+        raise HTTPException(status_code=404, detail="Collection not found")
+    if collection.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    item = (
+        db.query(CollectionItem)
+        .filter(
+            CollectionItem.collection_id == collection_id,
+            CollectionItem.paper_id == paper_id,
+        )
+        .one_or_none()
+    )
+    if item:
+        db.delete(item)
+        db.commit()
+    return {"status": "ok"}
+
+
+@app.get("/chats")
+def list_chats(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    chats = (
+        db.query(Chat)
+        .join(ChatParticipant, ChatParticipant.chat_id == Chat.id)
+        .filter(ChatParticipant.user_id == current_user.id)
+        .options(
+            selectinload(Chat.participants).selectinload(ChatParticipant.user),
+            selectinload(Chat.messages).selectinload(Message.reactions),
+        )
+        .order_by(Chat.created_at.desc())
+        .all()
+    )
+
+    payload = []
+    for chat in chats:
+        participants = [p.user for p in chat.participants if p.user]
+        other = next((p for p in participants if p.id != current_user.id), None)
+        if not other:
+            continue
+
+        messages = sorted(chat.messages, key=lambda m: m.created_at)
+        last_message_at = (
+            messages[-1].created_at.isoformat()
+            if messages
+            else chat.created_at.isoformat()
+        )
+        payload.append(
+            {
+                "id": str(chat.id),
+                "participantId": str(other.id),
+                "participant": _user_profile_dict(
+                    other, interests=_get_user_interests(db, other.id)
+                ),
+                "messages": [
+                    _message_to_dict(message, current_user.id) for message in messages
+                ],
+                "lastMessageAt": last_message_at,
+                "category": "primary",
+                "unread": False,
+            }
+        )
+    return {"items": payload}
+
+
+@app.post("/chats", status_code=201)
+def start_chat(
+    payload: ChatCreateIn,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    if payload.participant_id == current_user.id:
+        raise HTTPException(status_code=400, detail="Cannot chat with self")
+
+    other = db.query(User).filter(User.id == payload.participant_id).one_or_none()
+    if not other:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    subq = (
+        db.query(ChatParticipant.chat_id)
+        .filter(ChatParticipant.user_id.in_([current_user.id, other.id]))
+        .group_by(ChatParticipant.chat_id)
+        .having(func.count(ChatParticipant.user_id) == 2)
+        .subquery()
+    )
+    existing = db.query(Chat).filter(Chat.id.in_(subq)).one_or_none()
+    if existing:
+        return {"chat_id": str(existing.id)}
+
+    chat = Chat()
+    db.add(chat)
+    db.commit()
+    db.refresh(chat)
+
+    db.add(ChatParticipant(chat_id=chat.id, user_id=current_user.id))
+    db.add(ChatParticipant(chat_id=chat.id, user_id=other.id))
+    db.commit()
+    return {"chat_id": str(chat.id)}
+
+
+@app.post("/chats/{chat_id}/messages", status_code=201)
+def send_message(
+    chat_id: int,
+    payload: MessageSendIn,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    participant = (
+        db.query(ChatParticipant)
+        .filter(
+            ChatParticipant.chat_id == chat_id,
+            ChatParticipant.user_id == current_user.id,
+        )
+        .one_or_none()
+    )
+    if not participant:
+        raise HTTPException(status_code=404, detail="Chat not found")
+
+    message = Message(
+        chat_id=chat_id,
+        sender_id=current_user.id,
+        type=payload.type,
+        text=payload.text,
+        attachment=payload.attachment,
+    )
+    db.add(message)
+    db.commit()
+    db.refresh(message)
+    return _message_to_dict(message, current_user.id)
+
+
+@app.post("/messages/{message_id}/reactions")
+def react_to_message(
+    message_id: int,
+    payload: ReactionIn,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    message = (
+        db.query(Message)
+        .options(selectinload(Message.reactions))
+        .filter(Message.id == message_id)
+        .one_or_none()
+    )
+    if not message:
+        raise HTTPException(status_code=404, detail="Message not found")
+
+    participant = (
+        db.query(ChatParticipant)
+        .filter(
+            ChatParticipant.chat_id == message.chat_id,
+            ChatParticipant.user_id == current_user.id,
+        )
+        .one_or_none()
+    )
+    if not participant:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    existing = (
+        db.query(MessageReaction)
+        .filter(
+            MessageReaction.message_id == message_id,
+            MessageReaction.user_id == current_user.id,
+            MessageReaction.emoji == payload.emoji,
+        )
+        .one_or_none()
+    )
+    if existing:
+        db.delete(existing)
+        db.commit()
+    else:
+        db.add(
+            MessageReaction(
+                message_id=message_id,
+                user_id=current_user.id,
+                emoji=payload.emoji,
+            )
+        )
+        db.commit()
+
+    db.refresh(message)
+    db.expire(message, ["reactions"])
+    return _message_to_dict(message, current_user.id)
+
+
+@app.delete("/chats/{chat_id}")
+def delete_chat(
+    chat_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    chat = (
+        db.query(Chat)
+        .join(ChatParticipant, ChatParticipant.chat_id == Chat.id)
+        .filter(Chat.id == chat_id, ChatParticipant.user_id == current_user.id)
+        .one_or_none()
+    )
+    if not chat:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    db.delete(chat)
+    db.commit()
+    return {"status": "ok"}
+
+
+@app.post("/chats/{chat_id}/clear")
+def clear_chat(
+    chat_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    participant = (
+        db.query(ChatParticipant)
+        .filter(
+            ChatParticipant.chat_id == chat_id,
+            ChatParticipant.user_id == current_user.id,
+        )
+        .one_or_none()
+    )
+    if not participant:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    db.query(Message).filter(Message.chat_id == chat_id).delete()
+    db.commit()
+    return {"status": "ok"}
+
+
+@app.post("/users/{user_id}/block")
+def block_user(
+    user_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    if user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="Cannot block self")
+    existing = (
+        db.query(UserBlock)
+        .filter(UserBlock.blocker_id == current_user.id, UserBlock.blocked_id == user_id)
+        .one_or_none()
+    )
+    if not existing:
+        db.add(UserBlock(blocker_id=current_user.id, blocked_id=user_id))
+        db.commit()
+    return {"status": "ok"}
 
 
 @app.put("/me/interests")
@@ -614,42 +1390,8 @@ def update_interests(
     """
     user_id = _get_user_id(request, db)
 
-    normalized = {t.strip().lower() for t in payload.tags if t and t.strip()}
-    if not normalized:
-        db.query(UserInterest).filter(UserInterest.user_id == user_id).delete()
-        db.commit()
-        return {"user_id": user_id, "tags": [], "count": 0}
-
-    tags = db.query(Tag).filter(Tag.normalized_name.in_(normalized)).all()
-    found = {t.normalized_name for t in tags}
-    missing = sorted(normalized - found)
-    if missing:
-        raise HTTPException(status_code=400, detail={"missing_tags": missing})
-
-    existing = (
-        db.query(UserInterest)
-        .filter(UserInterest.user_id == user_id)
-        .all()
-    )
-    existing_ids = {ui.tag_id for ui in existing}
-    target_ids = {tag.id for tag in tags}
-
-    for ui in existing:
-        if ui.tag_id not in target_ids:
-            db.delete(ui)
-
-    for tag in tags:
-        if tag.id not in existing_ids:
-            db.add(
-                UserInterest(
-                    user_id=user_id,
-                    tag_id=tag.id,
-                    weight=1,
-                )
-            )
-
-    db.commit()
-    return {"user_id": user_id, "tags": sorted(found), "count": len(found)}
+    interests = _replace_user_interests(db, user_id, payload.tags)
+    return {"user_id": user_id, "tags": interests, "count": len(interests)}
 
 
 @app.post("/admin/ingestion/run")

@@ -7,7 +7,9 @@ import { EditProfileModal } from './components/EditProfileModal';
 import { SaveBoardModal } from './components/SaveBoardModal';
 import { HomeFeed } from './components/HomeFeed';
 import { CollectionsFeed } from './components/CollectionsFeed';
+import { AuthGate } from './components/AuthGate';
 import { api } from './services/api';
+import { AVAILABLE_TAGS } from './services/mockData';
 import { Article, FilterState, ViewState, Collection, UserProfile, CollectionVisibility, Theme } from './types';
 
 const App: React.FC = () => {
@@ -27,10 +29,13 @@ const App: React.FC = () => {
   const [profileUserId, setProfileUserId] = useState<string | null>(null);
   const [viewedProfileUser, setViewedProfileUser] = useState<UserProfile | null>(null);
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
+  const [authStatus, setAuthStatus] = useState<'loading' | 'authenticated' | 'guest'>('loading');
+  const [showAuthGate, setShowAuthGate] = useState(false);
   
   // Content State
   const [articles, setArticles] = useState<Article[]>([]);
   const [collections, setCollections] = useState<Collection[]>([]);
+  const [availableTags, setAvailableTags] = useState<string[]>(AVAILABLE_TAGS);
   const [loading, setLoading] = useState(true);
   
   // Interaction State
@@ -47,12 +52,39 @@ const App: React.FC = () => {
   // Collections View State
   const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null);
 
+  useEffect(() => {
+    const loadTags = async () => {
+      try {
+        const tags = await api.fetchTags();
+        if (tags.length) setAvailableTags(tags);
+      } catch (error) {
+        console.warn("Failed to load tags", error);
+      }
+    };
+    loadTags();
+  }, []);
+
   // Init User
   useEffect(() => {
     const initUser = async () => {
-      const user = await api.getCurrentUser();
-      setCurrentUser(user);
-      setProfileUserId(user.id); // Default to viewing own profile if navigated
+      if (!api.hasToken()) {
+        setCurrentUser(null);
+        setProfileUserId(null);
+        setAuthStatus('guest');
+        return;
+      }
+
+      try {
+        const user = await api.getCurrentUser();
+        setCurrentUser(user);
+        setProfileUserId(user.id); // Default to viewing own profile if navigated
+        setAuthStatus('authenticated');
+      } catch (error) {
+        api.logout();
+        setCurrentUser(null);
+        setProfileUserId(null);
+        setAuthStatus('guest');
+      }
     };
     initUser();
   }, []);
@@ -75,25 +107,36 @@ const App: React.FC = () => {
   const fetchContent = useCallback(async () => {
     setLoading(true);
     try {
-      const [fetchedArticles, fetchedCollections] = await Promise.all([
-        api.fetchArticles(filters),
-        api.getCollections(profileUserId && currentView === ViewState.PROFILE ? profileUserId : undefined)
-      ]);
+      const fetchedArticles = await api.fetchArticles(filters);
       setArticles(fetchedArticles);
-      setCollections(fetchedCollections);
+
+      if (currentUser) {
+        const fetchedCollections = await api.getCollections(
+          profileUserId && currentView === ViewState.PROFILE ? profileUserId : undefined
+        );
+        setCollections(fetchedCollections);
+      } else {
+        setCollections([]);
+      }
     } catch (error) {
       console.error("Failed to fetch data", error);
     } finally {
       setLoading(false);
     }
-  }, [filters, currentView, profileUserId]);
+  }, [filters, currentView, profileUserId, currentUser]);
 
   useEffect(() => {
-    fetchContent();
-  }, [fetchContent]);
+    if (authStatus !== 'loading') {
+      fetchContent();
+    }
+  }, [fetchContent, authStatus]);
 
   // Handle Profile Navigation
   const handleNavigateToProfile = async (userId: string) => {
+    if (!currentUser) {
+      setShowAuthGate(true);
+      return;
+    }
     setProfileUserId(userId);
     const user = await api.getUserProfile(userId);
     setViewedProfileUser(user);
@@ -108,6 +151,14 @@ const App: React.FC = () => {
         ? prev.selectedTags.filter(t => t !== tag)
         : [...prev.selectedTags, tag]
     }));
+  };
+
+  const requireAuth = () => {
+    if (!currentUser) {
+      setShowAuthGate(true);
+      return false;
+    }
+    return true;
   };
 
   const handleSearchChange = (q: string) => {
@@ -132,11 +183,13 @@ const App: React.FC = () => {
 
   // Save Flow
   const handleOpenSaveModal = (article: Article) => {
+    if (!requireAuth()) return;
     setArticleToSave(article);
     setIsSaveModalOpen(true);
   };
 
   const handleSaveToCollection = async (collectionId: string) => {
+    if (!requireAuth()) return;
     if (articleToSave) {
       await api.addArticleToCollection(collectionId, articleToSave.id);
       setIsSaveModalOpen(false);
@@ -148,6 +201,7 @@ const App: React.FC = () => {
   };
 
   const handleCreateAndSave = async (name: string, visibility: CollectionVisibility) => {
+    if (!requireAuth()) return;
     if (articleToSave) {
       const newCol = await api.createCollection(name, visibility);
       await api.addArticleToCollection(newCol.id, articleToSave.id);
@@ -202,7 +256,24 @@ const App: React.FC = () => {
       .slice(0, 3);
   }, [selectedArticle, articles]);
 
-  if (!currentUser) return <div className="h-screen flex items-center justify-center bg-white dark:bg-dark-bg text-gray-900 dark:text-white">Loading...</div>;
+  if (authStatus === 'loading') {
+    return <div className="h-screen flex items-center justify-center bg-white dark:bg-dark-bg text-gray-900 dark:text-white">Loading...</div>;
+  }
+
+  if (showAuthGate) {
+    return (
+      <AuthGate
+        availableTags={availableTags}
+        onAuthSuccess={(user) => {
+          setCurrentUser(user);
+          setProfileUserId(user.id);
+          setAuthStatus('authenticated');
+          setShowAuthGate(false);
+        }}
+        onClose={() => setShowAuthGate(false)}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-white dark:bg-dark-bg transition-colors duration-300">
@@ -212,24 +283,35 @@ const App: React.FC = () => {
         onSearchChange={handleSearchChange}
         onNavigate={(view) => {
           if (view === ViewState.PROFILE) {
-            handleNavigateToProfile(currentUser.id);
+            if (currentUser) {
+              handleNavigateToProfile(currentUser.id);
+            } else {
+              setShowAuthGate(true);
+            }
           } else {
+            if (view === ViewState.COLLECTIONS) {
+              setSelectedCollectionId('all');
+            }
             setCurrentView(view);
           }
         }}
         currentView={currentView}
+        onAuthClick={() => setShowAuthGate(true)}
       />
       
       <main className="pt-2">
         {currentView === ViewState.FEED && (
           <HomeFeed 
             articles={articles}
+            availableTags={availableTags}
             loading={loading}
             filters={filters}
             onTagToggle={handleTagToggle}
             onClearFilters={() => setFilters({ searchQuery: '', selectedTags: [] })}
             onOpenArticle={setSelectedArticle}
             onSaveArticle={handleOpenSaveModal}
+            canInteract={Boolean(currentUser)}
+            onRequireAuth={() => setShowAuthGate(true)}
           />
         )}
 
@@ -243,10 +325,12 @@ const App: React.FC = () => {
             onOpenArticle={setSelectedArticle}
             onSaveArticle={handleOpenSaveModal}
             onNavigateHome={() => setCurrentView(ViewState.FEED)}
+            canInteract={Boolean(currentUser)}
+            onRequireAuth={() => setShowAuthGate(true)}
           />
         )}
 
-        {currentView === ViewState.PROFILE && viewedProfileUser && (
+        {currentView === ViewState.PROFILE && currentUser && viewedProfileUser && (
           <ProfileView 
             user={viewedProfileUser}
             isOwnProfile={viewedProfileUser.id === currentUser.id}
@@ -271,22 +355,25 @@ const App: React.FC = () => {
           onSave={handleOpenSaveModal}
           relatedArticles={relatedArticles}
           onOpenArticle={setSelectedArticle}
+          canInteract={Boolean(currentUser)}
+          onRequireAuth={() => setShowAuthGate(true)}
         />
       )}
 
-      {isEditProfileOpen && (
+      {currentUser && isEditProfileOpen && (
         <EditProfileModal
           user={currentUser}
           isOpen={isEditProfileOpen}
-          onClose={() => setIsEditProfileOpen(false)}
-          onSave={handleUpdateProfile}
-          onChangePassword={api.changePassword}
-          currentTheme={theme}
+          availableTags={availableTags}
+            onClose={() => setIsEditProfileOpen(false)}
+            onSave={handleUpdateProfile}
+            onChangePassword={api.changePassword}
+            currentTheme={theme}
           onThemeChange={setTheme}
         />
       )}
 
-      {isSaveModalOpen && (
+      {currentUser && isSaveModalOpen && (
         <SaveBoardModal 
           isOpen={isSaveModalOpen}
           onClose={() => setIsSaveModalOpen(false)}

@@ -53,6 +53,13 @@ class Settings:
             raise RuntimeError("ML_REQUEST_TIMEOUT_SECONDS must be positive")
         return value
 
+    @property
+    def cors_origins(self) -> list[str]:
+        raw = os.getenv("BACKEND_CORS_ORIGINS", "")
+        if not raw:
+            return []
+        return [item.strip() for item in raw.split(",") if item.strip()]
+
 
 @lru_cache
 def get_settings() -> Settings:

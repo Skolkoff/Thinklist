@@ -1,14 +1,15 @@
 
 import React from 'react';
-import { Search } from 'lucide-react';
+import { Search, User } from 'lucide-react';
 import { UserProfile, ViewState } from '../types';
 
 interface NavbarProps {
-  user: UserProfile;
+  user?: UserProfile | null;
   searchQuery: string;
   onSearchChange: (q: string) => void;
   onNavigate: (view: ViewState) => void;
   currentView: ViewState;
+  onAuthClick?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({ 
@@ -16,7 +17,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   searchQuery, 
   onSearchChange,
   onNavigate,
-  currentView
+  currentView,
+  onAuthClick
 }) => {
   return (
     <div className="sticky top-0 z-40 bg-white dark:bg-dark-bg py-4 px-4 sm:px-6 shadow-sm flex items-center gap-4 border-b border-transparent dark:border-dark-border transition-colors">
@@ -68,12 +70,22 @@ export const Navbar: React.FC<NavbarProps> = ({
 
       {/* Profile */}
       <div className="flex items-center gap-2 sm:gap-3 shrink-0 text-gray-500 dark:text-gray-400">
-        <button 
-          onClick={() => onNavigate(ViewState.PROFILE)}
-          className="w-8 h-8 sm:w-12 sm:h-12 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden hover:opacity-80 transition-opacity"
-        >
-          <img src={user.avatarUrl} alt={user.name} className="w-full h-full object-cover" />
-        </button>
+        {user ? (
+          <button 
+            onClick={() => onNavigate(ViewState.PROFILE)}
+            className="w-8 h-8 sm:w-12 sm:h-12 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden hover:opacity-80 transition-opacity"
+          >
+            <img src={user.avatarUrl} alt={user.name} className="w-full h-full object-cover" />
+          </button>
+        ) : (
+          <button
+            onClick={() => onAuthClick && onAuthClick()}
+            className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-gray-100 border border-gray-200 flex items-center justify-center text-gray-500 hover:border-gray-300 hover:text-gray-700 transition-colors"
+            aria-label="Sign in"
+          >
+            <User size={20} />
+          </button>
+        )}
       </div>
     </div>
   );

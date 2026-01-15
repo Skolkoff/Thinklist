@@ -1,6 +1,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Article } from '../types';
+import { api } from '../services/api';
 import { Tag } from './Tag';
 import { 
   X, Share2, MoreHorizontal, ExternalLink, Quote, Heart, 
@@ -14,6 +15,8 @@ interface ArticleModalProps {
   onSave?: (article: Article) => void;
   relatedArticles?: Article[];
   onOpenArticle?: (article: Article) => void;
+  canInteract?: boolean;
+  onRequireAuth?: () => void;
 }
 
 export const ArticleModal: React.FC<ArticleModalProps> = ({ 
@@ -22,7 +25,9 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
   onAuthorClick, 
   onSave,
   relatedArticles,
-  onOpenArticle
+  onOpenArticle,
+  canInteract = true,
+  onRequireAuth
 }) => {
   const contentRef = useRef<HTMLDivElement>(null);
   const [isLiked, setIsLiked] = useState(false);
@@ -60,7 +65,8 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
   const handleCite = () => {
     const authors = article.authors.map(a => a.name).join(', ');
     const year = new Date(article.publishedAt).getFullYear();
-    const citation = `${authors}. "${article.title}". ${article.source}, ${year}. DOI: ${article.doi}`;
+    const reference = article.doi || article.url || 'N/A';
+    const citation = `${authors}. "${article.title}". ${article.source}, ${year}. DOI/URL: ${reference}`;
     navigator.clipboard.writeText(citation).then(() => {
        alert("Citation copied to clipboard!");
     }).catch(() => {
@@ -69,8 +75,19 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
   };
 
   const handleLike = () => {
-    setIsLiked(!isLiked);
-    setLikeCount(prev => isLiked ? prev - 1 : prev + 1);
+    if (!canInteract) {
+      if (onRequireAuth) onRequireAuth();
+      return;
+    }
+    const next = !isLiked;
+    setIsLiked(next);
+    setLikeCount(prev => next ? prev + 1 : Math.max(0, prev - 1));
+    if (next) {
+      api.toggleLike(article.id).catch(() => {
+        setIsLiked(!next);
+        setLikeCount(prev => Math.max(0, prev - 1));
+      });
+    }
   };
 
   // Share Logic
@@ -169,7 +186,13 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
 
             <div className="flex gap-3">
               <button 
-                onClick={() => onSave && onSave(article)}
+                onClick={() => {
+                  if (!canInteract) {
+                    if (onRequireAuth) onRequireAuth();
+                    return;
+                  }
+                  if (onSave) onSave(article);
+                }}
                 className="bg-primary text-white px-6 py-2 rounded-full font-bold hover:bg-red-700 transition-colors"
               >
                 Save
@@ -293,16 +316,22 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
           {/* Footer */}
           <div className="p-4 border-t border-gray-100 dark:border-dark-border shrink-0 flex justify-between items-center bg-white dark:bg-dark-card z-10">
              <div className="text-xs text-gray-400 hidden sm:block">
-                DOI: {article.doi.replace('10.1038/', '')}
+                {article.doi ? `DOI: ${article.doi.replace('10.1038/', '')}` : 'DOI: N/A'}
              </div>
-            <a 
-              href={`https://doi.org/${article.doi}`}
-              target="_blank"
-              rel="noreferrer"
-              className="flex items-center gap-2 bg-gray-900 dark:bg-white text-white dark:text-black px-6 py-3 rounded-full font-bold text-sm hover:bg-gray-800 dark:hover:bg-gray-200 transition-all shadow-md ml-auto"
-            >
-              Read full paper <ExternalLink size={16} />
-            </a>
+            {(() => {
+              const link = article.url || (article.doi ? `https://doi.org/${article.doi}` : undefined);
+              if (!link) return null;
+              return (
+                <a 
+                  href={link}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center gap-2 bg-gray-900 dark:bg-white text-white dark:text-black px-6 py-3 rounded-full font-bold text-sm hover:bg-gray-800 dark:hover:bg-gray-200 transition-all shadow-md ml-auto"
+                >
+                  Read full paper <ExternalLink size={16} />
+                </a>
+              );
+            })()}
           </div>
 
         </div>

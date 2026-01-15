@@ -1,249 +1,303 @@
+import {
+  Article,
+  Collection,
+  CollectionVisibility,
+  FilterState,
+  UserProfile,
+  ChatSession,
+  Message,
+  Attachment
+} from '../types';
 
-import { Article, Collection, CollectionVisibility, FilterState, UserProfile, ChatSession, Message, Attachment } from '../types';
-import { MOCK_ARTICLES, MOCK_COLLECTIONS, MOCK_USER, MOCK_OTHER_USER, MOCK_AUTHOR_USER } from './mockData';
+const API_BASE = import.meta.env.VITE_API_URL || '/api';
+const TOKEN_KEY = 'thinklist_token';
+const AVATAR_CACHE_PREFIX = 'thinklist_avatar_';
 
-const DELAY = 600; // Simulate network latency
+const getToken = () => localStorage.getItem(TOKEN_KEY);
+const setToken = (token: string) => localStorage.setItem(TOKEN_KEY, token);
+const clearToken = () => localStorage.removeItem(TOKEN_KEY);
+const avatarCacheKey = (userId: string) => `${AVATAR_CACHE_PREFIX}${userId}`;
 
-// In-memory state for the session
-let currentUserState = { ...MOCK_USER };
-
-// Mock Messenger State
-let MOCK_CHATS: ChatSession[] = [
-  {
-    id: 'chat-1',
-    participantId: 'u2',
-    participant: { ...MOCK_OTHER_USER, isFriend: true },
-    messages: [
-      {
-        id: 'm1',
-        senderId: 'u2',
-        text: 'Hey Alex, did you see the new paper on quantum entanglement?',
-        type: 'text',
-        timestamp: new Date(Date.now() - 3600000).toISOString(),
-        reactions: [{ emoji: '👍', count: 1, userReacted: false }]
-      }
-    ],
-    lastMessageAt: new Date(Date.now() - 3600000).toISOString(),
-    category: 'primary',
-    unread: true
+const applyCachedAvatar = (user: UserProfile): UserProfile => {
+  try {
+    const cached = localStorage.getItem(avatarCacheKey(user.id));
+    if (cached) {
+      return { ...user, avatarUrl: cached };
+    }
+  } catch (error) {
+    console.warn('Avatar cache read failed', error);
   }
-];
+  return user;
+};
+
+const buildQuery = (params: Record<string, string | number | undefined>) => {
+  const search = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value === undefined || value === '') return;
+    search.append(key, String(value));
+  });
+  const query = search.toString();
+  return query ? `?${query}` : '';
+};
+
+const request = async <T>(
+  path: string,
+  options: RequestInit = {},
+  auth = true,
+  retried = false
+): Promise<T> => {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(options.headers as Record<string, string>)
+  };
+
+  if (auth) {
+    const token = getToken();
+    if (token) headers.Authorization = `Bearer ${token}`;
+  }
+
+  const response = await fetch(`${API_BASE}${path}`, {
+    ...options,
+    headers
+  });
+
+  if (response.status === 401 && auth && !retried) {
+    clearToken();
+  }
+
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || `Request failed: ${response.status}`);
+  }
+
+  if (response.status === 204) {
+    return {} as T;
+  }
+
+  return response.json();
+};
+
+const bootstrapAuth = async () => {
+  if (getToken()) return;
+};
+
+const normalizeArticle = (article: Article): Article => {
+  return {
+    ...article,
+    publishedAt: article.publishedAt || new Date().toISOString(),
+    imageUrl: article.imageUrl || `https://picsum.photos/seed/article-${article.id}/800/1000`,
+    tags: article.tags || [],
+    authors: article.authors || [],
+    likes: article.likes ?? 0,
+    doi: article.doi || '',
+    source: article.source || 'Unknown'
+  };
+};
+
+const normalizeCollection = (collection: Collection): Collection => {
+  return {
+    ...collection,
+    articleIds: collection.articleIds || [],
+    visibility: collection.visibility || 'public',
+    isPrivate: collection.visibility === 'private',
+    articles: collection.articles ? collection.articles.map(normalizeArticle) : undefined
+  };
+};
 
 export const api = {
+  hasToken: (): boolean => Boolean(getToken()),
+  logout: () => clearToken(),
+  checkNickname: async (nickname: string): Promise<{ nickname: string; available: boolean }> => {
+    const query = buildQuery({ nickname });
+    return request<{ nickname: string; available: boolean }>(`/auth/nickname-available${query}`, {}, false);
+  },
+  cacheAvatar: (userId: string, url: string) => {
+    try {
+      localStorage.setItem(avatarCacheKey(userId), url);
+    } catch (error) {
+      console.warn('Avatar cache write failed', error);
+    }
+  },
+  register: async (payload: { email: string; password: string; nickname?: string }): Promise<void> => {
+    await request('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    }, false);
+  },
+  login: async (email: string, password: string): Promise<UserProfile> => {
+    const response = await request<{ access_token: string }>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password })
+    }, false);
+    setToken(response.access_token);
+    const user = await request<UserProfile>('/me');
+    return applyCachedAvatar(user);
+  },
+  fetchTags: async (): Promise<string[]> => {
+    await bootstrapAuth();
+    const response = await request<{ items: string[] }>('/tags');
+    return response.items || [];
+  },
+
   fetchArticles: async (filters: FilterState): Promise<Article[]> => {
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        let results = [...MOCK_ARTICLES];
+    const searchQuery = filters.searchQuery.trim();
+    const tags = filters.selectedTags.join(',');
 
-        // Filter by Search Query
-        if (filters.searchQuery) {
-          const q = filters.searchQuery.toLowerCase();
-          results = results.filter(a => 
-            a.title.toLowerCase().includes(q) || 
-            a.abstract.toLowerCase().includes(q)
-          );
-        }
+    const shouldSearch = searchQuery.length >= 2 || filters.selectedTags.length > 0;
+    if (shouldSearch) {
+      const query = buildQuery({
+        q: searchQuery.length >= 2 ? searchQuery : undefined,
+        tags: tags || undefined,
+        limit: 100
+      });
+      const response = await request<{ items: Article[] }>(`/search${query}`);
+      return response.items.map(normalizeArticle);
+    }
 
-        // Filter by Tags
-        if (filters.selectedTags.length > 0) {
-          results = results.filter(a => 
-            a.tags.some(tag => filters.selectedTags.includes(tag))
-          );
-        }
+    const query = buildQuery({ limit: 100 });
+    const hasAuth = Boolean(getToken());
+    const [feedResponse, savedResponse] = await Promise.all([
+      request<{ items: Article[] }>(`/feed${query}`),
+      hasAuth ? request<{ items: Article[] }>('/me/saved') : Promise.resolve({ items: [] })
+    ]);
 
-        // Recommendation Logic (Mock: shuffle if no filters to simulate discovery)
-        if (!filters.searchQuery && filters.selectedTags.length === 0) {
-           // Basic shuffle to simulate "Feed"
-           results.sort(() => Math.random() - 0.5);
-        }
+    const merged = new Map<string, Article>();
+    feedResponse.items.forEach(item => merged.set(item.id, item));
+    savedResponse.items.forEach(item => merged.set(item.id, item));
 
-        resolve(results);
-      }, DELAY);
-    });
+    return Array.from(merged.values()).map(normalizeArticle);
   },
 
   getCollections: async (userId?: string): Promise<Collection[]> => {
-    return new Promise((resolve) => {
-       setTimeout(() => {
-         if (userId) {
-           resolve(MOCK_COLLECTIONS.filter(c => c.ownerId === userId));
-         } else {
-           resolve(MOCK_COLLECTIONS);
-         }
-       }, DELAY);
-    });
+    if (!getToken()) return [];
+    const query = buildQuery({ user_id: userId, include_items: 1 });
+    const response = await request<{ items: Collection[] }>(`/collections${query}`);
+    return response.items.map(normalizeCollection);
   },
 
   createCollection: async (name: string, visibility: CollectionVisibility): Promise<Collection> => {
-    return new Promise((resolve) => {
-      const newCol: Collection = {
-        id: `col-${Date.now()}`,
-        name,
-        articleIds: [],
-        ownerId: currentUserState.id,
-        isPrivate: visibility === 'private',
-        visibility
-      };
-      MOCK_COLLECTIONS.push(newCol); // Update mock data
-      setTimeout(() => resolve(newCol), DELAY);
+    const response = await request<Collection>('/collections', {
+      method: 'POST',
+      body: JSON.stringify({ name, visibility })
     });
+    return normalizeCollection(response);
   },
 
   updateCollection: async (id: string, data: Partial<Collection>): Promise<Collection | null> => {
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        const index = MOCK_COLLECTIONS.findIndex(c => c.id === id);
-        if (index > -1) {
-          const updated = { ...MOCK_COLLECTIONS[index], ...data };
-          // Sync legacy isPrivate flag if visibility changes
-          if (data.visibility) {
-             updated.isPrivate = data.visibility === 'private';
-          }
-          MOCK_COLLECTIONS[index] = updated;
-          resolve(updated);
-        } else {
-          resolve(null);
-        }
-      }, DELAY);
+    const payload: Record<string, unknown> = {};
+    if (data.name !== undefined) payload.name = data.name;
+    if (data.visibility !== undefined) payload.visibility = data.visibility;
+    if (data.coverImage !== undefined) payload.cover_image = data.coverImage;
+
+    const response = await request<Collection>(`/collections/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload)
     });
+    return normalizeCollection(response);
   },
 
   deleteCollection: async (id: string): Promise<boolean> => {
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        const index = MOCK_COLLECTIONS.findIndex(c => c.id === id);
-        if (index > -1) {
-          MOCK_COLLECTIONS.splice(index, 1);
-          resolve(true);
-        } else {
-          resolve(false);
-        }
-      }, DELAY);
-    });
+    await request(`/collections/${id}`, { method: 'DELETE' });
+    return true;
   },
 
   addArticleToCollection: async (collectionId: string, articleId: string): Promise<boolean> => {
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        const col = MOCK_COLLECTIONS.find(c => c.id === collectionId);
-        if (col && !col.articleIds.includes(articleId)) {
-          col.articleIds.push(articleId);
-          // If it's the first article, update cover image
-          if (col.articleIds.length === 1) {
-            const art = MOCK_ARTICLES.find(a => a.id === articleId);
-            if (art) col.coverImage = art.imageUrl;
-          }
-        }
-        resolve(true);
-      }, 200);
+    await request(`/collections/${collectionId}/items`, {
+      method: 'POST',
+      body: JSON.stringify({ paper_id: Number(articleId) })
     });
+    return true;
   },
 
   toggleLike: async (articleId: string): Promise<boolean> => {
-    // Mock toggle
-    return new Promise(resolve => setTimeout(() => resolve(true), 200));
+    await request('/events', {
+      method: 'POST',
+      body: JSON.stringify({ paper_id: Number(articleId), action: 'like' })
+    });
+    return true;
   },
 
-  // User & Profile API
   getCurrentUser: async (): Promise<UserProfile> => {
-    return new Promise(resolve => setTimeout(() => resolve(currentUserState), DELAY / 2));
+    const response = await request<UserProfile>('/me');
+    return applyCachedAvatar(response);
   },
 
   getUserProfile: async (userId: string): Promise<UserProfile> => {
-     return new Promise(resolve => {
-        setTimeout(() => {
-           if (userId === MOCK_USER.id) resolve(currentUserState);
-           else if (userId === MOCK_OTHER_USER.id) resolve(MOCK_OTHER_USER);
-           else resolve(MOCK_AUTHOR_USER);
-        }, DELAY);
-     });
+    const response = await request<UserProfile>(`/users/${userId}`);
+    return applyCachedAvatar(response);
   },
 
   updateUserProfile: async (data: Partial<UserProfile>): Promise<UserProfile> => {
-    return new Promise(resolve => {
-       setTimeout(() => {
-          currentUserState = { ...currentUserState, ...data };
-          resolve(currentUserState);
-       }, DELAY);
+    const payload: Record<string, unknown> = {};
+    if (data.name !== undefined) payload.name = data.name;
+    if (data.nickname !== undefined) payload.nickname = data.nickname;
+    if (data.avatarUrl !== undefined) payload.avatar_url = data.avatarUrl;
+    if (data.workplace !== undefined) payload.workplace = data.workplace;
+    if (data.fieldOfStudy !== undefined) payload.field_of_study = data.fieldOfStudy;
+    if (data.bio !== undefined) payload.bio = data.bio;
+    if (data.interests !== undefined) payload.interests = data.interests;
+
+    const response = await request<UserProfile>('/me', {
+      method: 'PUT',
+      body: JSON.stringify(payload)
     });
+    return applyCachedAvatar(response);
   },
 
-  changePassword: async (old: string, newPwd: string): Promise<boolean> => {
-    return new Promise(resolve => setTimeout(() => resolve(true), DELAY));
+  changePassword: async (oldPassword: string, newPwd: string): Promise<boolean> => {
+    await request('/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ old_password: oldPassword, new_password: newPwd })
+    });
+    return true;
   },
 
-  // Messenger API
   getChats: async (): Promise<ChatSession[]> => {
-    return new Promise(resolve => setTimeout(() => resolve(MOCK_CHATS), 400));
+    const response = await request<{ items: ChatSession[] }>('/chats');
+    return response.items;
   },
 
   getFriends: async (): Promise<UserProfile[]> => {
-    // Return mock users as friends
-    return new Promise(resolve => setTimeout(() => resolve([MOCK_OTHER_USER, MOCK_AUTHOR_USER]), 300));
+    const response = await request<{ items: UserProfile[] }>('/friends');
+    return response.items;
   },
 
   sendMessage: async (chatId: string, text: string, type: string, attachment?: Attachment): Promise<void> => {
-    return new Promise(resolve => {
-      setTimeout(() => {
-        const chat = MOCK_CHATS.find(c => c.id === chatId);
-        if (chat) {
-          const newMessage: Message = {
-            id: `msg-${Date.now()}`,
-            senderId: currentUserState.id,
-            text,
-            type: type as any,
-            attachment,
-            timestamp: new Date().toISOString(),
-            reactions: []
-          };
-          chat.messages.push(newMessage);
-          chat.lastMessageAt = newMessage.timestamp;
-        }
-        resolve();
-      }, 150);
+    const payload = {
+      text,
+      type,
+      attachment: attachment || null
+    };
+    await request(`/chats/${chatId}/messages`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
     });
   },
 
   reactToMessage: async (chatId: string, messageId: string, emoji: string): Promise<void> => {
-    // Mock reaction persistence
-    return new Promise(resolve => setTimeout(resolve, 50));
+    await request(`/messages/${messageId}/reactions`, {
+      method: 'POST',
+      body: JSON.stringify({ emoji })
+    });
   },
 
   deleteChat: async (chatId: string): Promise<void> => {
-    MOCK_CHATS = MOCK_CHATS.filter(c => c.id !== chatId);
-    return new Promise(resolve => setTimeout(resolve, 200));
+    await request(`/chats/${chatId}`, { method: 'DELETE' });
   },
 
   clearChat: async (chatId: string): Promise<void> => {
-    const chat = MOCK_CHATS.find(c => c.id === chatId);
-    if (chat) chat.messages = [];
-    return new Promise(resolve => setTimeout(resolve, 200));
+    await request(`/chats/${chatId}/clear`, { method: 'POST' });
   },
 
   blockUser: async (userId: string): Promise<void> => {
-    // Mock user blocking
-    return new Promise(resolve => setTimeout(resolve, 300));
+    await request(`/users/${userId}/block`, { method: 'POST' });
   },
 
   startChat: async (userId: string): Promise<string> => {
-    return new Promise(resolve => {
-      const existing = MOCK_CHATS.find(c => c.participantId === userId);
-      if (existing) {
-        resolve(existing.id);
-        return;
-      }
-
-      const id = `chat-${Date.now()}`;
-      const newChat: ChatSession = {
-        id,
-        participantId: userId,
-        participant: { ...MOCK_OTHER_USER, id: userId, isFriend: true },
-        messages: [],
-        lastMessageAt: new Date().toISOString(),
-        category: 'primary'
-      };
-      MOCK_CHATS.push(newChat);
-      setTimeout(() => resolve(id), 400);
+    const response = await request<{ chat_id: string }>('/chats', {
+      method: 'POST',
+      body: JSON.stringify({ participant_id: Number(userId) })
     });
+    return response.chat_id;
   }
 };

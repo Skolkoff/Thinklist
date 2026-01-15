@@ -1,12 +1,12 @@
 
 import React, { useState, useRef } from 'react';
 import { UserProfile, Theme } from '../types';
-import { AVAILABLE_TAGS } from '../services/mockData';
 import { X, Camera, Lock, Sun, Moon, Monitor } from 'lucide-react';
 
 interface EditProfileModalProps {
   user: UserProfile;
   isOpen: boolean;
+  availableTags: string[];
   onClose: () => void;
   onSave: (data: Partial<UserProfile>) => void;
   onChangePassword: (old: string, newP: string) => Promise<boolean>;
@@ -15,7 +15,7 @@ interface EditProfileModalProps {
 }
 
 export const EditProfileModal: React.FC<EditProfileModalProps> = ({ 
-  user, isOpen, onClose, onSave, onChangePassword, currentTheme, onThemeChange 
+  user, isOpen, availableTags, onClose, onSave, onChangePassword, currentTheme, onThemeChange 
 }) => {
   const [formData, setFormData] = useState({
     name: user.name,
@@ -200,7 +200,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
               <div>
                 <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Select Interests</label>
                 <div className="flex flex-wrap gap-2">
-                  {AVAILABLE_TAGS.map(tag => (
+                  {(availableTags.length ? availableTags : user.interests).map(tag => (
                     <button
                       key={tag}
                       onClick={() => handleInterestToggle(tag)}

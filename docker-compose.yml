@@ -30,6 +30,7 @@ services:
       BACKEND_API_HOST: ${BACKEND_API_HOST:-0.0.0.0}
       BACKEND_API_PORT: ${BACKEND_API_PORT:-8000}
       ML_SERVICE_URL: ${ML_SERVICE_URL:-http://ml-service:8001}
+      BACKEND_CORS_ORIGINS: ${BACKEND_CORS_ORIGINS:-http://localhost:5173,http://localhost:3000}
     depends_on:
       postgres:
         condition: service_healthy
@@ -67,15 +68,15 @@ services:
       - scivise-network
 
   frontend:
-    profiles:
-      - frontend
     build:
       context: ./frontend
       dockerfile: Dockerfile
     container_name: thinklist-frontend
     ports:
-      - "5173:80"
+      - "5740:80"
     restart: unless-stopped
+    depends_on:
+      - backend-api
     networks:
       - scivise-network
 

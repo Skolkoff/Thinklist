@@ -4,27 +4,32 @@ import { Article, FilterState } from '../types';
 import { Tag } from './Tag';
 import { MasonryGrid } from './MasonryGrid';
 import { ArticleCard } from './ArticleCard';
-import { AVAILABLE_TAGS } from '../services/mockData';
 import { ChevronDown, ChevronUp, Cloud } from 'lucide-react';
 
 interface HomeFeedProps {
   articles: Article[];
+  availableTags: string[];
   loading: boolean;
   filters: FilterState;
   onTagToggle: (tag: string) => void;
   onClearFilters: () => void;
   onOpenArticle: (article: Article) => void;
   onSaveArticle: (article: Article) => void;
+  canInteract?: boolean;
+  onRequireAuth?: () => void;
 }
 
 export const HomeFeed: React.FC<HomeFeedProps> = ({
   articles,
+  availableTags,
   loading,
   filters,
   onTagToggle,
   onClearFilters,
   onOpenArticle,
-  onSaveArticle
+  onSaveArticle,
+  canInteract = true,
+  onRequireAuth
 }) => {
   const [isCloudOpen, setIsCloudOpen] = useState(false);
 
@@ -41,7 +46,11 @@ export const HomeFeed: React.FC<HomeFeedProps> = ({
 
     const maxCount = Math.max(...Object.values(counts), 1);
 
-    return AVAILABLE_TAGS
+    const tags = availableTags.length
+      ? availableTags
+      : Array.from(new Set(articles.flatMap(article => article.tags))).sort();
+
+    return tags
       .map(tag => {
         const count = counts[tag] || 0;
         let size: 'sm' | 'md' | 'lg' = 'sm';
@@ -60,7 +69,7 @@ export const HomeFeed: React.FC<HomeFeedProps> = ({
         if (b.count !== a.count) return b.count - a.count;
         return a.tag.localeCompare(b.tag);
       });
-  }, [articles, filters.selectedTags]);
+  }, [articles, availableTags, filters.selectedTags]);
 
   return (
     <>
@@ -142,15 +151,17 @@ export const HomeFeed: React.FC<HomeFeedProps> = ({
           </div>
         ) : (
           <MasonryGrid>
-            {articles.map(article => (
-              <ArticleCard 
-                key={article.id} 
-                article={article} 
-                onOpen={onOpenArticle}
-                onSave={onSaveArticle}
-              />
-            ))}
-          </MasonryGrid>
+              {articles.map(article => (
+                <ArticleCard 
+                  key={article.id} 
+                  article={article} 
+                  onOpen={onOpenArticle}
+                  onSave={onSaveArticle}
+                  canInteract={canInteract}
+                  onRequireAuth={onRequireAuth}
+                />
+              ))}
+            </MasonryGrid>
         )}
       </div>
     </>

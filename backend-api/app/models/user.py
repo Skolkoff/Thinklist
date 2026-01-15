@@ -26,8 +26,20 @@ class User(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     email: Mapped[str] = mapped_column(String(320), unique=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    nickname: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
+    avatar_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    workplace: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    field_of_study: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    bio: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped["DateTime"] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped["DateTime"] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
     )
 
     events: Mapped[list["Event"]] = relationship(
@@ -204,8 +216,16 @@ class Collection(Base):
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    visibility: Mapped[str] = mapped_column(String(32), nullable=False, server_default="public")
+    cover_image: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     created_at: Mapped["DateTime"] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped["DateTime"] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
     )
 
     user: Mapped["User"] = relationship(back_populates="collections")
@@ -253,3 +273,106 @@ class IngestionRun(Base):
     added: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     skipped: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     failed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
+class Chat(Base):
+    __tablename__ = "chats"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    created_at: Mapped["DateTime"] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    participants: Mapped[list["ChatParticipant"]] = relationship(
+        back_populates="chat", cascade="all, delete-orphan"
+    )
+    messages: Mapped[list["Message"]] = relationship(
+        back_populates="chat", cascade="all, delete-orphan"
+    )
+
+
+class ChatParticipant(Base):
+    __tablename__ = "chat_participants"
+    __table_args__ = (
+        UniqueConstraint("chat_id", "user_id", name="uq_chat_participants_chat_user"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    chat_id: Mapped[int] = mapped_column(
+        ForeignKey("chats.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    joined_at: Mapped["DateTime"] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    chat: Mapped["Chat"] = relationship(back_populates="participants")
+    user: Mapped["User"] = relationship()
+
+
+class Message(Base):
+    __tablename__ = "messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    chat_id: Mapped[int] = mapped_column(
+        ForeignKey("chats.id", ondelete="CASCADE"), nullable=False
+    )
+    sender_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    type: Mapped[str] = mapped_column(String(32), nullable=False, server_default="text")
+    text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    attachment: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped["DateTime"] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    chat: Mapped["Chat"] = relationship(back_populates="messages")
+    sender: Mapped["User"] = relationship()
+    reactions: Mapped[list["MessageReaction"]] = relationship(
+        back_populates="message", cascade="all, delete-orphan"
+    )
+
+
+class MessageReaction(Base):
+    __tablename__ = "message_reactions"
+    __table_args__ = (
+        UniqueConstraint(
+            "message_id", "user_id", "emoji", name="uq_message_reactions_message_user"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    message_id: Mapped[int] = mapped_column(
+        ForeignKey("messages.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    emoji: Mapped[str] = mapped_column(String(16), nullable=False)
+    created_at: Mapped["DateTime"] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    message: Mapped["Message"] = relationship(back_populates="reactions")
+    user: Mapped["User"] = relationship()
+
+
+class UserBlock(Base):
+    __tablename__ = "user_blocks"
+    __table_args__ = (
+        UniqueConstraint("blocker_id", "blocked_id", name="uq_user_blocks_blocker"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    blocker_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    blocked_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    created_at: Mapped["DateTime"] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
