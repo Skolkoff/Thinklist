@@ -2,6 +2,9 @@
 .idea/
 .vscode/
 
+.codex
+.playwright-mcp
+
 # Env files
 .env
 .env.*
