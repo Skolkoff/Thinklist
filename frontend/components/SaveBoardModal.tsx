@@ -2,17 +2,19 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Collection, CollectionVisibility } from '../types';
 import { X, Plus, Lock, Globe, UserCheck, FolderOpen } from 'lucide-react';
+import { Locale, t } from '../i18n';
 
 interface SaveBoardModalProps {
   isOpen: boolean;
   onClose: () => void;
   collections: Collection[];
+  locale: Locale;
   onSaveToCollection: (collectionId: string) => void;
   onCreateCollection: (name: string, visibility: CollectionVisibility) => void;
 }
 
 export const SaveBoardModal: React.FC<SaveBoardModalProps> = ({
-  isOpen, onClose, collections, onSaveToCollection, onCreateCollection
+  isOpen, onClose, collections, locale, onSaveToCollection, onCreateCollection
 }) => {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -45,7 +47,7 @@ export const SaveBoardModal: React.FC<SaveBoardModalProps> = ({
     try {
       await Promise.resolve(onSaveToCollection(collectionId));
     } catch {
-      setError('Could not save to this board.');
+      setError(t(locale, 'board.saveFailed'));
       setPendingAction(null);
     }
   };
@@ -57,7 +59,7 @@ export const SaveBoardModal: React.FC<SaveBoardModalProps> = ({
       try {
         await Promise.resolve(onCreateCollection(newCollectionName, visibility));
       } catch {
-        setError('Could not create this board.');
+        setError(t(locale, 'board.createFailed'));
         setPendingAction(null);
         return;
       }
@@ -68,9 +70,9 @@ export const SaveBoardModal: React.FC<SaveBoardModalProps> = ({
   };
 
   const visibilityOptions: { value: CollectionVisibility; label: string; icon: React.ReactNode }[] = [
-    { value: 'public', label: 'Public', icon: <Globe size={14} /> },
-    { value: 'followers', label: 'Followers', icon: <UserCheck size={14} /> },
-    { value: 'private', label: 'Private', icon: <Lock size={14} /> },
+    { value: 'public', label: t(locale, 'board.public'), icon: <Globe size={14} /> },
+    { value: 'followers', label: t(locale, 'board.followers'), icon: <UserCheck size={14} /> },
+    { value: 'private', label: t(locale, 'board.private'), icon: <Lock size={14} /> },
   ];
 
   return (
@@ -83,8 +85,8 @@ export const SaveBoardModal: React.FC<SaveBoardModalProps> = ({
         onClick={e => e.stopPropagation()}
       >
         <div className="p-4 text-center border-b border-gray-100 dark:border-dark-border relative">
-          <h2 id="save-board-title" className="font-bold text-lg text-gray-900 dark:text-white">Save to board</h2>
-          <button ref={closeButtonRef} onClick={onClose} aria-label="Close save dialog" className="absolute right-4 top-1/2 -translate-y-1/2 p-1.5 hover:bg-gray-100 dark:hover:bg-white/10 rounded-full text-gray-500 dark:text-gray-400">
+          <h2 id="save-board-title" className="font-bold text-lg text-gray-900 dark:text-white">{t(locale, 'board.saveTo')}</h2>
+          <button ref={closeButtonRef} onClick={onClose} aria-label={t(locale, 'board.closeSave')} className="absolute right-4 top-1/2 -translate-y-1/2 p-1.5 hover:bg-gray-100 dark:hover:bg-white/10 rounded-full text-gray-500 dark:text-gray-400">
             <X size={20} />
           </button>
         </div>
@@ -94,7 +96,7 @@ export const SaveBoardModal: React.FC<SaveBoardModalProps> = ({
             <div className="relative mb-4">
                <input 
                  type="text" 
-                 placeholder="Search" 
+                 placeholder={t(locale, 'board.search')} 
                  value={searchQuery}
                  onChange={(e) => setSearchQuery(e.target.value)}
                  className="w-full bg-gray-100 dark:bg-dark-bg rounded-full px-4 py-3 outline-none focus:ring-2 focus:ring-gray-200 dark:focus:ring-gray-700 text-gray-900 dark:text-white placeholder:text-gray-500 dark:placeholder:text-gray-400"
@@ -105,7 +107,7 @@ export const SaveBoardModal: React.FC<SaveBoardModalProps> = ({
                 <input 
                    type="text" 
                    autoFocus
-                   placeholder="Board Name" 
+                   placeholder={t(locale, 'board.name')} 
                    value={newCollectionName}
                    onChange={(e) => setNewCollectionName(e.target.value)}
                    className="w-full bg-gray-100 dark:bg-dark-bg rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-gray-200 dark:focus:ring-gray-700 text-gray-900 dark:text-white placeholder:text-gray-500 dark:placeholder:text-gray-400"
@@ -134,7 +136,7 @@ export const SaveBoardModal: React.FC<SaveBoardModalProps> = ({
                    disabled={!newCollectionName.trim() || pendingAction === 'create'}
                    className={`w-full py-3 rounded-full font-bold transition-colors mt-1 ${!newCollectionName.trim() || pendingAction === 'create' ? 'bg-gray-200 dark:bg-white/10 text-gray-400' : 'bg-primary text-white hover:bg-red-700'}`}
                 >
-                   {pendingAction === 'create' ? 'Creating...' : 'Create Board'}
+                   {pendingAction === 'create' ? t(locale, 'board.creating') : t(locale, 'board.create')}
                 </button>
              </div>
           )}
@@ -148,12 +150,12 @@ export const SaveBoardModal: React.FC<SaveBoardModalProps> = ({
           <div className="max-h-[300px] overflow-y-auto custom-scrollbar">
             {!isCreating && (
               <>
-                <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2">All boards</p>
+                <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2">{t(locale, 'board.all')}</p>
                 {filteredCollections.length === 0 ? (
                   <div className="py-10 text-center text-gray-500 dark:text-gray-400">
                     <FolderOpen size={36} className="mx-auto mb-3 text-gray-300 dark:text-gray-600" />
                     <p className="text-sm font-medium">
-                      {collections.length === 0 ? 'No boards yet.' : 'No boards match this search.'}
+                      {collections.length === 0 ? t(locale, 'board.noBoards') : t(locale, 'board.noSearch')}
                     </p>
                   </div>
                 ) : filteredCollections.map(col => (
@@ -168,8 +170,8 @@ export const SaveBoardModal: React.FC<SaveBoardModalProps> = ({
                       </div>
                       <div className="flex flex-col">
                         <span className="font-bold text-gray-900 dark:text-white text-sm">{col.name}</span>
-                        {col.visibility === 'private' && <span className="text-[10px] text-gray-500 flex items-center gap-1"><Lock size={10}/> Private</span>}
-                        {col.visibility === 'followers' && <span className="text-[10px] text-gray-500 flex items-center gap-1"><UserCheck size={10}/> Followers</span>}
+                        {col.visibility === 'private' && <span className="text-[10px] text-gray-500 flex items-center gap-1"><Lock size={10}/> {t(locale, 'board.private')}</span>}
+                        {col.visibility === 'followers' && <span className="text-[10px] text-gray-500 flex items-center gap-1"><UserCheck size={10}/> {t(locale, 'board.followers')}</span>}
                       </div>
                     </div>
                     <button
@@ -177,7 +179,7 @@ export const SaveBoardModal: React.FC<SaveBoardModalProps> = ({
                       disabled={Boolean(pendingAction)}
                       className="bg-primary text-white px-3 py-1.5 text-sm font-bold rounded-full opacity-0 group-hover:opacity-100 transition-opacity disabled:bg-gray-300 disabled:text-gray-500"
                     >
-                      {pendingAction === col.id ? 'Saving...' : 'Save'}
+                      {pendingAction === col.id ? t(locale, 'board.saving') : t(locale, 'board.save')}
                     </button>
                   </div>
                 ))}
@@ -194,7 +196,7 @@ export const SaveBoardModal: React.FC<SaveBoardModalProps> = ({
              <div className="w-12 h-12 rounded-lg bg-gray-100 dark:bg-white/10 flex items-center justify-center">
                <Plus size={24} className="text-gray-900 dark:text-white" />
              </div>
-             <span className="font-bold text-gray-900 dark:text-white">Create Board</span>
+             <span className="font-bold text-gray-900 dark:text-white">{t(locale, 'board.create')}</span>
           </div>
         )}
       </div>

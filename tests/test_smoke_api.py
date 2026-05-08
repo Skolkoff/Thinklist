@@ -4,6 +4,7 @@ from scripts.smoke_api import (
     Check,
     normalize_base_url,
     run_comments_flow,
+    run_hybrid_rank_flow,
     run_profile_update_flow,
     unique_demo_email,
 )
@@ -40,6 +41,9 @@ class SmokeApiTests(unittest.TestCase):
 
     def test_comments_flow_is_available_for_demo_validation(self) -> None:
         self.assertEqual(run_comments_flow.__name__, "run_comments_flow")
+
+    def test_hybrid_rank_flow_is_available_for_demo_validation(self) -> None:
+        self.assertEqual(run_hybrid_rank_flow.__name__, "run_hybrid_rank_flow")
 
 
 if __name__ == "__main__":

@@ -2,20 +2,24 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { UserProfile, Theme } from '../types';
 import { X, Camera, Lock, Sun, Moon, Monitor } from 'lucide-react';
+import { getTopicLabel, LanguagePreference, Locale, t } from '../i18n';
 
 interface EditProfileModalProps {
   user: UserProfile;
   isOpen: boolean;
   availableTags: string[];
+  locale: Locale;
+  currentLanguagePreference: LanguagePreference;
   onClose: () => void;
   onSave: (data: Partial<UserProfile>) => Promise<void> | void;
   onChangePassword: (old: string, newP: string) => Promise<boolean>;
   currentTheme: Theme;
   onThemeChange: (t: Theme) => void;
+  onLanguagePreferenceChange: (language: LanguagePreference) => Promise<void> | void;
 }
 
 export const EditProfileModal: React.FC<EditProfileModalProps> = ({ 
-  user, isOpen, availableTags, onClose, onSave, onChangePassword, currentTheme, onThemeChange 
+  user, isOpen, availableTags, locale, currentLanguagePreference, onClose, onSave, onChangePassword, currentTheme, onThemeChange, onLanguagePreferenceChange
 }) => {
   const [formData, setFormData] = useState({
     name: user.name,
@@ -82,7 +86,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
     const name = formData.name.trim();
     const nickname = formData.nickname.trim();
     if (!name || !nickname) {
-      setProfileError("Name and nickname are required.");
+      setProfileError(t(locale, 'profile.nameRequired'));
       return;
     }
 
@@ -98,7 +102,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
       });
       onClose();
     } catch (error) {
-      setProfileError(error instanceof Error ? error.message : "Failed to save profile.");
+      setProfileError(error instanceof Error ? error.message : t(locale, 'profile.saveFailed'));
     } finally {
       setIsSavingProfile(false);
     }
@@ -107,21 +111,21 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
   const handleSavePassword = async () => {
     setPasswordMessage(null);
     if (passwordData.newPassword !== passwordData.confirmPassword) {
-      setPasswordMessage({ type: 'error', text: "Passwords do not match." });
+      setPasswordMessage({ type: 'error', text: t(locale, 'profile.passwordMismatch') });
       return;
     }
     if (!passwordData.oldPassword || !passwordData.newPassword) {
-      setPasswordMessage({ type: 'error', text: "Current and new password are required." });
+      setPasswordMessage({ type: 'error', text: t(locale, 'profile.passwordRequired') });
       return;
     }
 
     setIsChangingPassword(true);
     try {
       await onChangePassword(passwordData.oldPassword, passwordData.newPassword);
-      setPasswordMessage({ type: 'success', text: "Password changed successfully." });
+      setPasswordMessage({ type: 'success', text: t(locale, 'profile.passwordChanged') });
       setPasswordData({ oldPassword: '', newPassword: '', confirmPassword: '' });
     } catch (error) {
-      setPasswordMessage(error instanceof Error ? { type: 'error', text: error.message } : { type: 'error', text: "Failed to change password." });
+      setPasswordMessage(error instanceof Error ? { type: 'error', text: error.message } : { type: 'error', text: t(locale, 'profile.passwordFailed') });
     } finally {
       setIsChangingPassword(false);
     }
@@ -132,8 +136,8 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
       <div role="dialog" aria-modal="true" aria-labelledby="edit-profile-title" className="bg-white dark:bg-dark-card rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl transition-colors">
         {/* Header */}
         <div className="px-6 py-4 border-b border-gray-100 dark:border-dark-border flex justify-between items-center">
-          <h2 id="edit-profile-title" className="text-xl font-bold text-gray-900 dark:text-white">Edit Profile</h2>
-          <button ref={closeButtonRef} onClick={onClose} aria-label="Close profile dialog" className="p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-full text-gray-500 dark:text-gray-300">
+          <h2 id="edit-profile-title" className="text-xl font-bold text-gray-900 dark:text-white">{t(locale, 'profile.edit')}</h2>
+          <button ref={closeButtonRef} onClick={onClose} aria-label={t(locale, 'profile.closeDialog')} className="p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-full text-gray-500 dark:text-gray-300">
             <X size={24} />
           </button>
         </div>
@@ -143,13 +147,13 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
              onClick={() => setActiveTab('profile')}
              className={`flex-1 py-3 text-sm font-semibold border-b-2 transition-colors ${activeTab === 'profile' ? 'border-primary text-gray-900 dark:text-white' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}
            >
-             Public Profile
+             {t(locale, 'profile.publicProfile')}
            </button>
            <button 
              onClick={() => setActiveTab('settings')}
              className={`flex-1 py-3 text-sm font-semibold border-b-2 transition-colors ${activeTab === 'settings' ? 'border-primary text-gray-900 dark:text-white' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}
            >
-             Settings
+             {t(locale, 'profile.settings')}
            </button>
         </div>
 
@@ -163,7 +167,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
                   onClick={triggerFileInput}
                   className="w-24 h-24 rounded-full bg-gray-200 dark:bg-gray-700 relative overflow-hidden group cursor-pointer"
                 >
-                  <img src={formData.avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+                  <img src={formData.avatarUrl} alt={t(locale, 'profile.avatarAlt')} className="w-full h-full object-cover" />
                   <div className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                     <Camera className="text-white" />
                   </div>
@@ -172,7 +176,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
                   onClick={triggerFileInput}
                   className="text-sm font-semibold text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-white/10 px-4 py-2 rounded-full hover:bg-gray-200 dark:hover:bg-white/20"
                 >
-                  Change
+                  {t(locale, 'profile.change')}
                 </button>
                 <input 
                   type="file" 
@@ -186,7 +190,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
               {/* Fields */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">First & Last Name</label>
+                  <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">{t(locale, 'profile.firstLastName')}</label>
                   <input 
                     type="text" 
                     value={formData.name}
@@ -195,7 +199,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Nickname</label>
+                  <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">{t(locale, 'profile.nickname')}</label>
                   <input 
                     type="text" 
                     value={formData.nickname}
@@ -207,41 +211,41 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                  <div>
-                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Workplace (Optional)</label>
+                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">{t(locale, 'profile.workplace')}</label>
                     <input 
                       type="text" 
                       value={formData.workplace}
                       onChange={e => setFormData({...formData, workplace: e.target.value})}
-                      placeholder="University, Lab, Company"
+                      placeholder={t(locale, 'profile.workplacePlaceholder')}
                       className="w-full p-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-dark-bg text-gray-900 dark:text-white focus:border-gray-400 focus:ring-0 outline-none"
                     />
                  </div>
                  <div>
-                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Field of Study</label>
+                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">{t(locale, 'profile.fieldOfStudy')}</label>
                     <select 
                       value={formData.fieldOfStudy}
                       onChange={e => setFormData({...formData, fieldOfStudy: e.target.value})}
                       className="w-full p-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-dark-bg text-gray-900 dark:text-white focus:border-gray-400 focus:ring-0 outline-none"
                     >
-                      <option value="">Select Field...</option>
-                      <option value="Physics">Physics</option>
-                      <option value="Mathematics">Mathematics</option>
-                      <option value="Computer Science">Computer Science</option>
-                      <option value="Biology">Biology</option>
-                      <option value="Law">Law</option>
-                      <option value="History">History</option>
+                      <option value="">{t(locale, 'profile.selectField')}</option>
+                      <option value="Physics">{t(locale, 'field.physics')}</option>
+                      <option value="Mathematics">{t(locale, 'field.mathematics')}</option>
+                      <option value="Computer Science">{t(locale, 'field.computerScience')}</option>
+                      <option value="Biology">{t(locale, 'field.biology')}</option>
+                      <option value="Law">{t(locale, 'field.law')}</option>
+                      <option value="History">{t(locale, 'field.history')}</option>
                     </select>
                  </div>
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">About</label>
+                <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">{t(locale, 'profile.about')}</label>
                 <textarea 
                   value={formData.bio}
                   onChange={e => setFormData({...formData, bio: e.target.value})}
                   rows={3}
                   className="w-full p-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-dark-bg text-gray-900 dark:text-white focus:border-gray-400 focus:ring-0 outline-none resize-none"
-                  placeholder="Tell us your story..."
+                  placeholder={t(locale, 'profile.aboutPlaceholder')}
                 />
               </div>
 
@@ -249,7 +253,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
 
               {/* Interests */}
               <div>
-                <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Select Interests</label>
+                <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">{t(locale, 'profile.selectInterests')}</label>
                 <div className="flex flex-wrap gap-2">
                   {(availableTags.length ? availableTags : user.interests).map(tag => (
                     <button
@@ -261,7 +265,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
                           : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
                       }`}
                     >
-                      {tag}
+                      {getTopicLabel(tag, locale)}
                     </button>
                   ))}
                 </div>
@@ -277,12 +281,12 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
             <div className="space-y-8">
               {/* Appearance */}
               <div>
-                 <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Appearance</h3>
+                 <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">{t(locale, 'profile.appearance')}</h3>
                  <div className="grid grid-cols-3 gap-3">
                     {[
-                      { id: 'light', label: 'Light', icon: <Sun size={20}/> },
-                      { id: 'dark', label: 'Dark', icon: <Moon size={20}/> },
-                      { id: 'system', label: 'System', icon: <Monitor size={20}/> }
+                      { id: 'light', label: t(locale, 'profile.themeLight'), icon: <Sun size={20}/> },
+                      { id: 'dark', label: t(locale, 'profile.themeDark'), icon: <Moon size={20}/> },
+                      { id: 'system', label: t(locale, 'profile.themeSystem'), icon: <Monitor size={20}/> }
                     ].map((t) => (
                       <button
                         key={t.id}
@@ -300,19 +304,42 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
                  </div>
               </div>
 
+              <div>
+                 <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">{t(locale, 'profile.language')}</h3>
+                 <div className="grid grid-cols-3 gap-3">
+                    {[
+                      { id: 'system', label: t(locale, 'profile.languageSystem') },
+                      { id: 'en', label: t(locale, 'profile.languageEnglish') },
+                      { id: 'ru', label: t(locale, 'profile.languageRussian') }
+                    ].map((option) => (
+                      <button
+                        key={option.id}
+                        onClick={() => onLanguagePreferenceChange(option.id as LanguagePreference)}
+                        className={`flex min-h-16 items-center justify-center rounded-xl border p-3 text-sm font-semibold transition-all ${
+                          currentLanguagePreference === option.id
+                            ? 'border-primary bg-red-50 text-primary dark:bg-red-900/20'
+                            : 'border-gray-200 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/5'
+                        }`}
+                      >
+                         {option.label}
+                      </button>
+                    ))}
+                 </div>
+              </div>
+
               <div className="h-px bg-gray-100 dark:bg-dark-border"></div>
 
               {/* Security */}
               <div>
-                <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Account Security</h3>
+                <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">{t(locale, 'profile.accountSecurity')}</h3>
                 <div className="bg-yellow-50 dark:bg-yellow-900/20 p-4 rounded-xl border border-yellow-100 dark:border-yellow-900/30 text-sm text-yellow-800 dark:text-yellow-200 flex gap-2 mb-6">
                   <Lock size={16} className="mt-0.5 shrink-0" />
-                  <span>Changing your password will sign you out of all other devices.</span>
+                  <span>{t(locale, 'profile.passwordWarning')}</span>
                 </div>
                 
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Old Password</label>
+                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">{t(locale, 'profile.oldPassword')}</label>
                     <input 
                       type="password" 
                       value={passwordData.oldPassword}
@@ -321,7 +348,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">New Password</label>
+                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">{t(locale, 'profile.newPassword')}</label>
                     <input 
                       type="password" 
                       value={passwordData.newPassword}
@@ -330,7 +357,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Confirm New Password</label>
+                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">{t(locale, 'profile.confirmNewPassword')}</label>
                     <input 
                       type="password" 
                       value={passwordData.confirmPassword}
@@ -356,7 +383,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
                     disabled={isChangingPassword}
                     className="bg-gray-900 dark:bg-white text-white dark:text-black px-6 py-3 rounded-full font-bold hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors"
                   >
-                    {isChangingPassword ? "Changing..." : "Change Password"}
+                    {isChangingPassword ? t(locale, 'profile.changingPassword') : t(locale, 'profile.changePassword')}
                   </button>
                 </div>
               </div>
@@ -372,14 +399,14 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
               disabled={isSavingProfile}
               className="px-5 py-2.5 rounded-full font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
             >
-              Cancel
+              {t(locale, 'profile.cancel')}
             </button>
             <button 
               onClick={handleSaveProfile}
               disabled={isSavingProfile}
               className="px-5 py-2.5 rounded-full font-semibold bg-primary text-white hover:bg-red-700 transition-colors disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {isSavingProfile ? "Saving..." : "Save Profile"}
+              {isSavingProfile ? t(locale, 'profile.saving') : t(locale, 'profile.saveProfile')}
             </button>
           </div>
         )}

@@ -3,11 +3,13 @@ import React, { useState } from 'react';
 import { Article } from '../types';
 import { api } from '../services/api';
 import { MoreHorizontal, Share2, Heart, ArrowUpRight } from 'lucide-react';
+import { Locale, t } from '../i18n';
 
 interface ArticleCardProps {
   article: Article;
   onOpen: (article: Article) => void;
   onSave?: (article: Article) => void;
+  locale: Locale;
   canInteract?: boolean;
   onRequireAuth?: () => void;
 }
@@ -16,6 +18,7 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({
   article,
   onOpen,
   onSave,
+  locale,
   canInteract = true,
   onRequireAuth
 }) => {
@@ -81,7 +84,7 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({
               onClick={handleSave}
               className="bg-primary text-white px-4 py-3 rounded-full font-semibold text-sm hover:bg-red-700 transition-colors shadow-sm"
             >
-              Save
+              {t(locale, 'article.save')}
             </button>
           </div>
 
@@ -89,7 +92,7 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({
             <button 
               onClick={handleOpenSource}
               className="bg-white p-2 rounded-full hover:bg-gray-100 shadow-sm text-gray-800"
-              title="Open Source"
+              title={t(locale, 'article.openSource')}
             >
               <ArrowUpRight size={18} />
             </button>

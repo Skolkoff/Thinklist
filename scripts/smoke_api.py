@@ -454,6 +454,57 @@ def run_comments_flow(backend_url: str, timeout: float) -> CheckResult:
     return CheckResult("comments", True, 200, " -> ".join(steps))
 
 
+def run_hybrid_rank_flow(ml_url: str, timeout: float) -> CheckResult:
+    ml = normalize_base_url(ml_url)
+    status, payload, body = request_json(
+        "POST",
+        f"{ml}/ml/rank",
+        body={
+            "user_id": 1,
+            "positive_paper_ids": [1],
+            "candidate_paper_ids": [1, 2, 3, 4, 5],
+            "user_interests": ["cs.LG", "cs.AI"],
+            "hidden_paper_ids": [],
+            "exploration_ratio": 0.2,
+        },
+        timeout=timeout,
+    )
+    ranked = (payload or {}).get("ranked") or []
+    if status != 200 or not ranked:
+        return CheckResult(
+            "hybrid rank",
+            False,
+            status,
+            f"rank failed with {status}; body={body[:220]}",
+        )
+
+    first = ranked[0]
+    required = ["paper_id", "score", "bucket", "scores", "reasons"]
+    missing = [key for key in required if key not in first]
+    if missing:
+        return CheckResult(
+            "hybrid rank",
+            False,
+            status,
+            f"missing keys {missing}; body={body[:220]}",
+        )
+    if first["bucket"] not in {"core", "adjacent"}:
+        return CheckResult(
+            "hybrid rank",
+            False,
+            status,
+            f"unexpected bucket {first['bucket']}; body={body[:220]}",
+        )
+
+    score_keys = sorted((first.get("scores") or {}).keys())
+    return CheckResult(
+        "hybrid rank",
+        True,
+        200,
+        f"ranked={len(ranked)} first={first['paper_id']} bucket={first['bucket']} scores={','.join(score_keys)}",
+    )
+
+
 def build_checks(
     backend_url: str,
     ml_url: str,
@@ -525,6 +576,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Create a temporary user, add/list/react/unreact/delete an article comment.",
     )
+    parser.add_argument(
+        "--include-hybrid-rank",
+        action="store_true",
+        help="Verify ML rank returns hybrid score components and explanation reasons.",
+    )
     parser.add_argument("--timeout", type=float, default=5.0)
     args = parser.parse_args(argv)
 
@@ -541,6 +597,8 @@ def main(argv: list[str] | None = None) -> int:
         results.append(run_profile_update_flow(args.backend_url, timeout=args.timeout))
     if args.include_comments:
         results.append(run_comments_flow(args.backend_url, timeout=args.timeout))
+    if args.include_hybrid_rank:
+        results.append(run_hybrid_rank_flow(args.ml_url, timeout=args.timeout))
 
     for result in results:
         prefix = "PASS" if result.ok else "FAIL"

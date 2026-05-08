@@ -275,6 +275,7 @@ export const api = {
     if (data.fieldOfStudy !== undefined) payload.field_of_study = data.fieldOfStudy;
     if (data.bio !== undefined) payload.bio = data.bio;
     if (data.interests !== undefined) payload.interests = data.interests;
+    if (data.languagePreference !== undefined) payload.language_preference = data.languagePreference;
 
     const response = await request<UserProfile>('/me', {
       method: 'PUT',

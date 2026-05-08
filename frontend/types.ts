@@ -53,6 +53,7 @@ export interface UserProfile {
   fieldOfStudy?: string;
   bio?: string;
   interests: string[];
+  languagePreference?: 'system' | 'en' | 'ru';
 }
 
 export enum ViewState {

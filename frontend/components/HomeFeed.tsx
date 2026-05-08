@@ -5,10 +5,12 @@ import { Tag } from './Tag';
 import { MasonryGrid } from './MasonryGrid';
 import { ArticleCard } from './ArticleCard';
 import { ChevronDown, ChevronUp, Cloud } from 'lucide-react';
+import { getTopicChipLabel, Locale, t } from '../i18n';
 
 interface HomeFeedProps {
   articles: Article[];
   availableTags: string[];
+  locale: Locale;
   loading: boolean;
   filters: FilterState;
   onTagToggle: (tag: string) => void;
@@ -22,6 +24,7 @@ interface HomeFeedProps {
 export const HomeFeed: React.FC<HomeFeedProps> = ({
   articles,
   availableTags,
+  locale,
   loading,
   filters,
   onTagToggle,
@@ -74,15 +77,17 @@ export const HomeFeed: React.FC<HomeFeedProps> = ({
   return (
     <>
       {/* Topics / Tag Cloud Section */}
-      <div className="sticky top-[72px] z-30 bg-white/95 dark:bg-dark-bg/95 backdrop-blur-sm border-b border-gray-100 dark:border-dark-border transition-all duration-300">
-         <div className="max-w-[2000px] mx-auto px-4 md:px-8">
+      <div className="sticky top-[73px] z-30 bg-white/95 dark:bg-dark-bg/95 backdrop-blur-sm border-b border-gray-100 dark:border-dark-border transition-all duration-300 md:top-[81px]">
+         <div className="max-w-[2000px] mx-auto px-4 md:px-8 pt-0.5">
             
             {/* Header / Toggle Bar */}
             <div className="flex items-center justify-between py-4">
                <div className="flex items-center gap-2 text-gray-900 dark:text-white">
                   <Cloud size={18} className={filters.selectedTags.length > 0 ? "text-primary" : "text-gray-400 dark:text-gray-500"} />
                   <span className="font-bold text-sm tracking-wide uppercase">
-                    {filters.selectedTags.length > 0 ? `${filters.selectedTags.length} Topics Selected` : 'Explore Topics'}
+                    {filters.selectedTags.length > 0
+                      ? t(locale, 'topics.selected', { count: filters.selectedTags.length })
+                      : t(locale, 'topics.explore')}
                   </span>
                </div>
                
@@ -90,36 +95,36 @@ export const HomeFeed: React.FC<HomeFeedProps> = ({
                  onClick={() => setIsCloudOpen(!isCloudOpen)}
                  className="flex items-center gap-1 text-xs font-semibold text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 transition-colors bg-gray-50 dark:bg-white/5 px-3 py-1.5 rounded-full"
                >
-                 {isCloudOpen ? 'Collapse' : 'View Cloud'}
+                 {isCloudOpen ? t(locale, 'topics.collapse') : t(locale, 'topics.viewCloud')}
                  {isCloudOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                </button>
             </div>
 
             {/* Content */}
-            <div className={`overflow-hidden transition-all duration-500 ease-in-out ${isCloudOpen ? 'max-h-[500px] pb-6 opacity-100' : 'max-h-16 opacity-100'}`}>
+            <div className={`overflow-hidden transition-all duration-500 ease-in-out ${isCloudOpen ? 'max-h-[500px] pb-6 opacity-100' : 'max-h-[150px] opacity-100'}`}>
               {isCloudOpen ? (
                 // Full Cloud View
                 <div className="flex flex-wrap gap-3 items-center justify-center py-2 animate-in fade-in zoom-in-95 duration-300">
                    {tagData.length > 0 ? tagData.map(({ tag, count, size }) => (
                       <Tag 
                         key={tag} 
-                        label={tag} 
+                        label={getTopicChipLabel(tag, locale)} 
                         size={size}
                         count={count}
                         selected={filters.selectedTags.includes(tag)}
                         onClick={() => onTagToggle(tag)}
                       />
                    )) : (
-                     <p className="text-sm text-gray-500 italic">No topics matching current search.</p>
+                     <p className="text-sm text-gray-500 italic">{t(locale, 'topics.noMatches')}</p>
                    )}
                 </div>
               ) : (
                 // Compact Horizontal Scroll View
-                <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-4 -mt-2">
+                <div className="flex shrink-0 items-center gap-2 overflow-x-auto no-scrollbar pb-4">
                   {tagData.map(({ tag }) => (
                     <Tag 
                       key={tag} 
-                      label={tag} 
+                      label={getTopicChipLabel(tag, locale)} 
                       selected={filters.selectedTags.includes(tag)}
                       onClick={() => onTagToggle(tag)}
                     />
@@ -136,17 +141,17 @@ export const HomeFeed: React.FC<HomeFeedProps> = ({
           <div className="flex justify-center items-center h-64 text-gray-400">
              <div className="animate-pulse flex flex-col items-center">
                <div className="w-12 h-12 bg-gray-200 dark:bg-white/10 rounded-full mb-4"></div>
-               <p>Curating your feed...</p>
+               <p>{t(locale, 'feed.loading')}</p>
              </div>
           </div>
         ) : articles.length === 0 ? (
           <div className="text-center py-20 text-gray-500">
-            <p className="text-xl">No articles found matching your criteria.</p>
+            <p className="text-xl">{t(locale, 'feed.empty')}</p>
             <button 
               onClick={onClearFilters}
               className="mt-4 text-primary font-medium hover:underline"
             >
-              Clear filters
+              {t(locale, 'feed.clearFilters')}
             </button>
           </div>
         ) : (
@@ -157,6 +162,7 @@ export const HomeFeed: React.FC<HomeFeedProps> = ({
                   article={article} 
                   onOpen={onOpenArticle}
                   onSave={onSaveArticle}
+                  locale={locale}
                   canInteract={canInteract}
                   onRequireAuth={onRequireAuth}
                 />

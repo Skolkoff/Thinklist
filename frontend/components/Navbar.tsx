@@ -2,9 +2,11 @@
 import React from 'react';
 import { Home, Library, Search, User } from 'lucide-react';
 import { UserProfile, ViewState } from '../types';
+import { Locale, t } from '../i18n';
 
 interface NavbarProps {
   user?: UserProfile | null;
+  locale: Locale;
   searchQuery: string;
   onSearchChange: (q: string) => void;
   onNavigate: (view: ViewState) => void;
@@ -37,6 +39,7 @@ const MobileNavButton: React.FC<MobileNavButtonProps> = ({ label, active = false
 
 export const Navbar: React.FC<NavbarProps> = ({ 
   user, 
+  locale,
   searchQuery, 
   onSearchChange,
   onNavigate,
@@ -47,7 +50,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     <>
       <div className="sticky top-0 z-40 bg-white dark:bg-dark-bg py-3 px-3 sm:py-4 sm:px-6 shadow-sm flex items-center gap-3 sm:gap-4 border-b border-transparent dark:border-dark-border transition-colors">
         {/* Logo */}
-        <button onClick={() => onNavigate(ViewState.FEED)} className="flex items-center gap-2 shrink-0" aria-label="Go to home feed">
+        <button onClick={() => onNavigate(ViewState.FEED)} className="flex items-center gap-2 shrink-0" aria-label={t(locale, 'nav.home')}>
           <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center">
               <span className="text-white font-bold text-lg">S</span>
           </div>
@@ -64,7 +67,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 : 'text-gray-900 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/10'
             }`}
           >
-            Home
+            {t(locale, 'nav.home')}
           </button>
           <button 
             onClick={() => onNavigate(ViewState.COLLECTIONS)}
@@ -74,7 +77,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 : 'text-gray-900 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/10'
             }`}
           >
-            Collections
+            {t(locale, 'nav.collections')}
           </button>
         </div>
 
@@ -87,7 +90,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             type="text"
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
-            placeholder="Search"
+            placeholder={t(locale, 'nav.search')}
             className="w-full bg-gray-100 dark:bg-dark-card hover:bg-gray-200 dark:hover:bg-white/10 focus:bg-white dark:focus:bg-dark-card border border-transparent focus:border-blue-300 dark:focus:border-blue-700 focus:ring-4 focus:ring-blue-100 dark:focus:ring-blue-900/30 rounded-full py-2.5 sm:py-3 pl-10 sm:pl-12 pr-3 sm:pr-4 text-base text-gray-900 dark:text-white outline-none transition-all placeholder:text-gray-400"
           />
         </div>
@@ -98,7 +101,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button 
               onClick={() => onNavigate(ViewState.PROFILE)}
               className="w-9 h-9 sm:w-12 sm:h-12 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden hover:opacity-80 transition-opacity"
-              aria-label="Open profile"
+              aria-label={t(locale, 'nav.profile')}
             >
               <img src={user.avatarUrl} alt={user.name} className="w-full h-full object-cover" />
             </button>
@@ -106,7 +109,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button
               onClick={() => onAuthClick && onAuthClick()}
               className="w-9 h-9 sm:w-12 sm:h-12 rounded-full bg-gray-100 border border-gray-200 flex items-center justify-center text-gray-500 hover:border-gray-300 hover:text-gray-700 transition-colors"
-              aria-label="Sign in"
+              aria-label={t(locale, 'nav.signIn')}
             >
               <User size={20} />
             </button>
@@ -120,19 +123,19 @@ export const Navbar: React.FC<NavbarProps> = ({
       >
         <div className="mx-auto flex max-w-sm gap-2">
           <MobileNavButton
-            label="Home"
+            label={t(locale, 'nav.home')}
             active={currentView === ViewState.FEED}
             onClick={() => onNavigate(ViewState.FEED)}
             icon={<Home size={20} />}
           />
           <MobileNavButton
-            label="Boards"
+            label={t(locale, 'nav.boards')}
             active={currentView === ViewState.COLLECTIONS}
             onClick={() => onNavigate(ViewState.COLLECTIONS)}
             icon={<Library size={20} />}
           />
           <MobileNavButton
-            label={user ? 'Profile' : 'Sign in'}
+            label={user ? t(locale, 'nav.profile') : t(locale, 'nav.signIn')}
             active={currentView === ViewState.PROFILE}
             onClick={() => (user ? onNavigate(ViewState.PROFILE) : onAuthClick && onAuthClick())}
             icon={<User size={20} />}

@@ -1,5 +1,6 @@
 import React, { useRef } from 'react';
 import { UploadCloud } from 'lucide-react';
+import { Locale, t } from '../i18n';
 
 interface RegisterStepAvatarProps {
   selectedAvatar: string | null;
@@ -9,6 +10,7 @@ interface RegisterStepAvatarProps {
   onNext: () => void;
   onSkip: () => void;
   loading: boolean;
+  locale: Locale;
 }
 
 export const RegisterStepAvatar: React.FC<RegisterStepAvatarProps> = ({
@@ -18,7 +20,8 @@ export const RegisterStepAvatar: React.FC<RegisterStepAvatarProps> = ({
   onBack,
   onNext,
   onSkip,
-  loading
+  loading,
+  locale
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -41,7 +44,7 @@ export const RegisterStepAvatar: React.FC<RegisterStepAvatarProps> = ({
         <div className="h-24 w-24 overflow-hidden rounded-full border border-gray-200">
           <img
             src={selectedAvatar || presetAvatars[0]}
-            alt="Selected avatar"
+            alt={t(locale, 'auth.selectedAvatar')}
             className="h-full w-full object-cover"
           />
         </div>
@@ -50,7 +53,7 @@ export const RegisterStepAvatar: React.FC<RegisterStepAvatarProps> = ({
           onClick={() => fileInputRef.current?.click()}
           className="flex items-center gap-2 rounded-full border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:border-gray-300"
         >
-          <UploadCloud size={16} /> Upload avatar
+          <UploadCloud size={16} /> {t(locale, 'auth.uploadAvatar')}
         </button>
         <input
           ref={fileInputRef}
@@ -62,7 +65,7 @@ export const RegisterStepAvatar: React.FC<RegisterStepAvatarProps> = ({
       </div>
 
       <div>
-        <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3">Suggested avatars</p>
+        <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3">{t(locale, 'auth.suggestedAvatars')}</p>
         <div className="grid grid-cols-3 gap-3 sm:grid-cols-6">
           {presetAvatars.map((avatar) => (
             <button
@@ -73,7 +76,7 @@ export const RegisterStepAvatar: React.FC<RegisterStepAvatarProps> = ({
                 selectedAvatar === avatar ? 'border-black' : 'border-transparent'
               }`}
             >
-              <img src={avatar} alt="Avatar option" className="h-full w-full object-cover" />
+              <img src={avatar} alt={t(locale, 'auth.avatarOption')} className="h-full w-full object-cover" />
             </button>
           ))}
         </div>
@@ -85,14 +88,14 @@ export const RegisterStepAvatar: React.FC<RegisterStepAvatarProps> = ({
           onClick={onBack}
           className="w-full rounded-full border border-gray-200 px-6 py-3 text-sm font-semibold text-gray-700 hover:border-gray-300"
         >
-          Back
+          {t(locale, 'auth.back')}
         </button>
         <button
           type="button"
           onClick={onSkip}
           className="w-full rounded-full border border-gray-200 px-6 py-3 text-sm font-semibold text-gray-500 hover:border-gray-300"
         >
-          Skip for now
+          {t(locale, 'auth.skip')}
         </button>
         <button
           type="button"
@@ -100,7 +103,7 @@ export const RegisterStepAvatar: React.FC<RegisterStepAvatarProps> = ({
           disabled={loading}
           className="w-full rounded-full bg-black px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-gray-900 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {loading ? 'Saving...' : 'Continue'}
+          {loading ? t(locale, 'auth.saving') : t(locale, 'auth.continue')}
         </button>
       </div>
     </div>

@@ -32,6 +32,9 @@ class User(Base):
     workplace: Mapped[str | None] = mapped_column(String(255), nullable=True)
     field_of_study: Mapped[str | None] = mapped_column(String(255), nullable=True)
     bio: Mapped[str | None] = mapped_column(Text, nullable=True)
+    language_preference: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default="system", default="system"
+    )
     created_at: Mapped["DateTime"] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

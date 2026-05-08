@@ -7,9 +7,11 @@ import {
   X, Share2, MoreHorizontal, ExternalLink, Quote, Heart, 
   Link as LinkIcon, Twitter, Linkedin, Check, MessageCircle, Send, Trash2
 } from 'lucide-react';
+import { getTopicLabel, Locale, t } from '../i18n';
 
 interface ArticleModalProps {
   article: Article | null;
+  locale: Locale;
   onClose: () => void;
   onAuthorClick?: (authorName: string) => void;
   onSave?: (article: Article) => void;
@@ -21,6 +23,7 @@ interface ArticleModalProps {
 
 export const ArticleModal: React.FC<ArticleModalProps> = ({ 
   article, 
+  locale,
   onClose, 
   onAuthorClick, 
   onSave,
@@ -88,7 +91,7 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
         const items = await api.getArticleComments(article.id);
         if (!cancelled) setComments(items);
       } catch (error) {
-        if (!cancelled) setCommentsError('Comments are unavailable right now.');
+        if (!cancelled) setCommentsError(t(locale, 'article.commentsUnavailable'));
       } finally {
         if (!cancelled) setCommentsLoading(false);
       }
@@ -98,7 +101,7 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [article?.id]);
+  }, [article?.id, locale]);
 
   if (!article) return null;
 
@@ -108,9 +111,9 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
     const reference = article.doi || article.url || 'N/A';
     const citation = `${authors}. "${article.title}". ${article.source}, ${year}. DOI/URL: ${reference}`;
     navigator.clipboard.writeText(citation).then(() => {
-       alert("Citation copied to clipboard!");
+       alert(t(locale, 'article.citationCopied'));
     }).catch(() => {
-       alert("Failed to copy citation.");
+       alert(t(locale, 'article.citationCopyFailed'));
     });
   };
 
@@ -176,7 +179,7 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
       setComments(prev => [...prev, created]);
       setCommentDraft('');
     } catch (error) {
-      setCommentsError('Could not publish this comment.');
+      setCommentsError(t(locale, 'article.commentPublishFailed'));
     } finally {
       setCommentSubmitting(false);
     }
@@ -193,7 +196,7 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
         : await api.reactToComment(comment.id, 'heart');
       setComments(prev => prev.map(item => item.id === updated.id ? updated : item));
     } catch (error) {
-      setCommentsError('Could not update the reaction.');
+      setCommentsError(t(locale, 'article.commentReactionFailed'));
     }
   };
 
@@ -202,13 +205,13 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
       await api.deleteArticleComment(commentId);
       setComments(prev => prev.filter(comment => comment.id !== commentId));
     } catch (error) {
-      setCommentsError('Could not delete this comment.');
+      setCommentsError(t(locale, 'article.commentDeleteFailed'));
     }
   };
 
   const formatCommentDate = (value: string) => {
     try {
-      return new Intl.DateTimeFormat('en', {
+      return new Intl.DateTimeFormat(locale === 'ru' ? 'ru-RU' : 'en', {
         month: 'short',
         day: 'numeric',
         year: 'numeric'
@@ -231,7 +234,7 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
         <button 
           ref={closeButtonRef}
           onClick={onClose}
-          aria-label="Close article"
+          aria-label={t(locale, 'article.close')}
           className="absolute top-3 left-3 z-30 p-2 bg-white/70 backdrop-blur-md rounded-full md:hidden hover:bg-white transition-colors"
         >
           <X size={20} className="text-gray-900" />
@@ -260,7 +263,7 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
                <div className="relative">
                  <button 
                     onClick={() => setShowShareMenu(!showShareMenu)}
-                    aria-label="Share article"
+                    aria-label={t(locale, 'article.share')}
                     className={`p-2 rounded-full transition-colors text-gray-700 dark:text-gray-300 ${showShareMenu ? 'bg-black dark:bg-white text-white dark:text-black' : 'hover:bg-gray-100 dark:hover:bg-white/10'}`}
                  >
                    <Share2 size={20} />
@@ -271,10 +274,10 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
                    <>
                      <div className="fixed inset-0 z-40" onClick={() => setShowShareMenu(false)}></div>
                      <div className="fixed left-4 right-4 top-20 z-50 flex flex-col gap-1 rounded-2xl border border-gray-100 bg-white p-2 shadow-xl animate-in fade-in zoom-in-95 duration-200 dark:border-dark-border dark:bg-dark-card sm:absolute sm:left-0 sm:right-auto sm:top-full sm:mt-2 sm:w-56 sm:origin-top-left">
-                        <div className="px-3 py-2 text-xs font-bold text-gray-400 uppercase tracking-wider">Share to</div>
+                        <div className="px-3 py-2 text-xs font-bold text-gray-400 uppercase tracking-wider">{t(locale, 'article.shareTo')}</div>
                         <button onClick={handleCopyLink} className="flex items-center gap-3 px-3 py-2.5 text-sm font-semibold text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-white/10 rounded-xl transition-colors text-left w-full group">
                            {linkCopied ? <Check size={18} className="text-green-500" /> : <LinkIcon size={18} className="text-gray-500 dark:text-gray-400 group-hover:text-gray-900 dark:group-hover:text-white" />}
-                           {linkCopied ? <span className="text-green-600">Copied!</span> : 'Copy Link'}
+                           {linkCopied ? <span className="text-green-600">{t(locale, 'article.copied')}</span> : t(locale, 'article.copyLink')}
                         </button>
                         <button onClick={() => handleSocialShare('twitter')} className="flex items-center gap-3 px-3 py-2.5 text-sm font-semibold text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-white/10 rounded-xl transition-colors text-left w-full group">
                            <Twitter size={18} className="text-gray-500 dark:text-gray-400 group-hover:text-[#1DA1F2]" /> Twitter
@@ -299,11 +302,11 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
                 }}
                 className="bg-primary text-white px-6 py-2 rounded-full font-bold hover:bg-red-700 transition-colors"
               >
-                Save
+                {t(locale, 'article.save')}
               </button>
               <button 
                 onClick={onClose}
-                aria-label="Close article"
+                aria-label={t(locale, 'article.close')}
                 className="hidden md:flex p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-full transition-colors text-gray-700 dark:text-gray-300"
               >
                 <X size={24} />
@@ -338,7 +341,7 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
                >
                  <Heart size={18} className={isLiked ? "fill-current" : ""} />
                  <span className="font-semibold text-sm">
-                   {isLiked ? 'Liked' : 'Like'} 
+                   {isLiked ? t(locale, 'article.liked') : t(locale, 'article.like')} 
                    <span className="ml-1 opacity-75">{likeCount > 0 ? likeCount : ''}</span>
                  </span>
                </button>
@@ -348,13 +351,13 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
                  className="flex items-center gap-2 px-4 py-2 rounded-full bg-gray-100 dark:bg-white/10 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-white/20 transition-colors"
                >
                  <Quote size={18} />
-                 <span className="font-semibold text-sm">Cite</span>
+                 <span className="font-semibold text-sm">{t(locale, 'article.cite')}</span>
                </button>
             </div>
 
             {/* Authors */}
             <div className="mb-8">
-               <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-4">Authors</h3>
+               <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-4">{t(locale, 'article.authors')}</h3>
                <div className="flex flex-wrap gap-4">
                   {article.authors.map(author => (
                      <button 
@@ -375,12 +378,12 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
 
             {/* Tags */}
             <div className="mb-8">
-              <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-3">Topics</h3>
+              <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-3">{t(locale, 'article.topics')}</h3>
               <div className="flex flex-wrap gap-2">
                 {article.tags.map(tag => (
                   <Tag 
                     key={tag} 
-                    label={tag} 
+                    label={getTopicLabel(tag, locale)} 
                     size="md"
                     selected={false}
                   />
@@ -393,7 +396,7 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
               <div className="mb-4 flex items-center justify-between gap-3">
                 <h3 className="flex items-center gap-2 text-base font-semibold text-gray-900 dark:text-white">
                   <MessageCircle size={18} />
-                  Comments
+                  {t(locale, 'article.comments')}
                 </h3>
                 <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-500 dark:bg-white/10 dark:text-gray-300">
                   {comments.length}
@@ -408,7 +411,7 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
                     onFocus={() => {
                       if (!canInteract && onRequireAuth) onRequireAuth();
                     }}
-                    placeholder={canInteract ? 'Add a comment to this paper...' : 'Sign in to join the discussion'}
+                    placeholder={canInteract ? t(locale, 'article.commentPlaceholder') : t(locale, 'article.signInToComment')}
                     maxLength={2000}
                     rows={3}
                     disabled={!canInteract || commentSubmitting}
@@ -416,7 +419,7 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
                   />
                   <div className="mt-2 flex items-center justify-between gap-3">
                     <p className="text-xs text-gray-400">
-                      {canInteract ? `${commentDraft.trim().length}/2000` : 'Guests can read comments.'}
+                      {canInteract ? `${commentDraft.trim().length}/2000` : t(locale, 'article.guestsCanRead')}
                     </p>
                     <button
                       type="submit"
@@ -424,7 +427,7 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
                       className="inline-flex items-center gap-2 rounded-full bg-gray-900 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-300 dark:bg-white dark:text-black dark:hover:bg-gray-200 dark:disabled:bg-white/20 dark:disabled:text-white/50"
                     >
                       <Send size={16} />
-                      {commentSubmitting ? 'Posting' : 'Post'}
+                      {commentSubmitting ? t(locale, 'article.posting') : t(locale, 'article.post')}
                     </button>
                   </div>
                 </div>
@@ -444,7 +447,7 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
                 </div>
               ) : comments.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-gray-200 px-4 py-6 text-center text-sm text-gray-500 dark:border-dark-border dark:text-gray-400">
-                  No comments yet.
+                  {t(locale, 'article.noComments')}
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -472,7 +475,7 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
                             <button
                               type="button"
                               onClick={() => handleDeleteComment(comment.id)}
-                              aria-label="Delete comment"
+                              aria-label={t(locale, 'article.deleteComment')}
                               className="rounded-full p-2 text-gray-400 transition-colors hover:bg-white hover:text-red-600 dark:hover:bg-white/10"
                             >
                               <Trash2 size={16} />
@@ -489,7 +492,7 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
                             className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-bold transition-colors ${comment.viewerReaction ? 'bg-red-50 text-red-600 dark:bg-red-900/30' : 'bg-white text-gray-600 hover:text-red-600 dark:bg-white/10 dark:text-gray-300'}`}
                           >
                             <Heart size={15} className={comment.viewerReaction ? 'fill-current' : ''} />
-                            {heartCount > 0 ? heartCount : 'Like'}
+                            {heartCount > 0 ? heartCount : t(locale, 'article.like')}
                           </button>
                         </div>
                       </article>
@@ -502,7 +505,7 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
             {/* Related Articles */}
             {relatedArticles && relatedArticles.length > 0 && (
               <div className="mt-8 pt-8 border-t border-gray-100 dark:border-dark-border">
-                <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-4">Related Articles</h3>
+                <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-4">{t(locale, 'article.related')}</h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-4">
                   {relatedArticles.map(related => (
                     <div 
@@ -544,7 +547,7 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
                   rel="noreferrer"
                   className="flex items-center gap-2 bg-gray-900 dark:bg-white text-white dark:text-black px-6 py-3 rounded-full font-bold text-sm hover:bg-gray-800 dark:hover:bg-gray-200 transition-all shadow-md ml-auto"
                 >
-                  Read full paper <ExternalLink size={16} />
+                  {t(locale, 'article.readFull')} <ExternalLink size={16} />
                 </a>
               );
             })()}

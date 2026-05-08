@@ -5,9 +5,11 @@ import { ArticleCard } from './ArticleCard';
 import { MasonryGrid } from './MasonryGrid';
 import { EditCollectionModal } from './EditCollectionModal';
 import { Edit2, MapPin, Briefcase, FolderOpen, Check, MoreHorizontal, Share2, Settings, Trash2, Lock, Users, AlertCircle, Plus } from 'lucide-react';
+import { getTopicLabel, Locale, t } from '../i18n';
 
 interface ProfileViewProps {
   user: UserProfile;
+  locale: Locale;
   isOwnProfile: boolean;
   collections: Collection[];
   articles: Article[]; // Created/Published articles
@@ -20,7 +22,7 @@ interface ProfileViewProps {
 }
 
 export const ProfileView: React.FC<ProfileViewProps> = ({
-  user, isOwnProfile, collections, articles, onEditProfile, onOpenArticle, onDeleteCollection, onUpdateCollection, onCreateCollection, onNavigateToCollection
+  user, locale, isOwnProfile, collections, articles, onEditProfile, onOpenArticle, onDeleteCollection, onUpdateCollection, onCreateCollection, onNavigateToCollection
 }) => {
   const [activeTab, setActiveTab] = useState<'created' | 'saved'>('created');
   
@@ -70,9 +72,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     } else {
       // Fallback to clipboard
       navigator.clipboard.writeText(url).then(() => {
-        showToast("Board link copied to clipboard!");
+        showToast(t(locale, 'profile.boardLinkCopied'));
       }).catch(() => {
-        showToast("Failed to copy link");
+        showToast(t(locale, 'profile.linkCopyFailed'));
       });
     }
   };
@@ -87,7 +89,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     if (deleteConfirmCollection) {
       onDeleteCollection(deleteConfirmCollection.id);
       setDeleteConfirmCollection(null);
-      showToast("Board deleted");
+      showToast(t(locale, 'profile.boardDeleted'));
     }
   };
 
@@ -108,22 +110,22 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 <div className="w-12 h-12 bg-red-100 dark:bg-red-900/20 text-red-600 rounded-full flex items-center justify-center mb-4">
                    <AlertCircle size={24} />
                 </div>
-                <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Delete this board?</h3>
+                <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">{t(locale, 'profile.deleteBoardTitle')}</h3>
                 <p className="text-gray-500 dark:text-gray-400 text-sm mb-6">
-                  Are you sure you want to delete <strong>{deleteConfirmCollection.name}</strong>? This action cannot be undone. Articles will remain in your library.
+                  {t(locale, 'profile.deleteBoardText', { name: deleteConfirmCollection.name })}
                 </p>
                 <div className="flex gap-3 w-full">
                    <button 
                      onClick={() => setDeleteConfirmCollection(null)}
                      className="flex-1 py-3 rounded-full font-bold text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 transition-colors"
                    >
-                     Cancel
+                     {t(locale, 'profile.cancel')}
                    </button>
                    <button 
                      onClick={confirmDelete}
                      className="flex-1 py-3 rounded-full font-bold text-white bg-red-600 hover:bg-red-700 transition-colors shadow-sm"
                    >
-                     Delete
+                     {t(locale, 'profile.delete')}
                    </button>
                 </div>
              </div>
@@ -156,11 +158,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         <div className="flex gap-3 mb-6">
            <div className="text-center px-4">
               <span className="block font-bold text-gray-900 dark:text-white">{collections.length}</span>
-              <span className="text-xs text-gray-500 dark:text-gray-400">Boards</span>
+              <span className="text-xs text-gray-500 dark:text-gray-400">{t(locale, 'profile.boards')}</span>
            </div>
            <div className="text-center px-4">
               <span className="block font-bold text-gray-900 dark:text-white">{user.interests.length}</span>
-              <span className="text-xs text-gray-500 dark:text-gray-400">Interests</span>
+              <span className="text-xs text-gray-500 dark:text-gray-400">{t(locale, 'profile.interests')}</span>
            </div>
         </div>
 
@@ -169,7 +171,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           <div className="flex flex-wrap justify-center gap-2 mb-8 max-w-xl">
              {user.interests.map(interest => (
                <div key={interest} className="px-3 py-1.5 bg-gray-100 dark:bg-white/10 text-gray-600 dark:text-gray-300 text-sm font-medium rounded-full">
-                 {interest}
+                 {getTopicLabel(interest, locale)}
                </div>
              ))}
           </div>
@@ -181,16 +183,16 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               onClick={onEditProfile}
               className="bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-900 dark:text-white px-6 py-3 rounded-full font-semibold transition-colors flex items-center gap-2"
             >
-              <Edit2 size={16} /> Edit Profile
+              <Edit2 size={16} /> {t(locale, 'profile.edit')}
             </button>
             <button 
               onClick={() => {
                  const url = window.location.href;
-                 navigator.clipboard.writeText(url).then(() => showToast("Profile link copied!"));
+                 navigator.clipboard.writeText(url).then(() => showToast(t(locale, 'profile.profileLinkCopied')));
               }}
               className="bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-900 dark:text-white px-6 py-3 rounded-full font-semibold transition-colors"
             >
-              Share
+              {t(locale, 'profile.share')}
             </button>
           </div>
         ) : (
@@ -198,11 +200,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             <button 
               onClick={() => {
                  const url = window.location.href;
-                 navigator.clipboard.writeText(url).then(() => showToast("Profile link copied!"));
+                 navigator.clipboard.writeText(url).then(() => showToast(t(locale, 'profile.profileLinkCopied')));
               }}
               className="bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-900 dark:text-white px-6 py-3 rounded-full font-semibold transition-colors"
             >
-              Share
+              {t(locale, 'profile.share')}
             </button>
           </div>
         )}
@@ -219,7 +221,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                   : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
               }`}
             >
-              Publications
+              {t(locale, 'profile.publications')}
             </button>
             <button 
               onClick={() => setActiveTab('saved')}
@@ -229,7 +231,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                   : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
               }`}
             >
-              Saved Boards
+              {t(locale, 'profile.savedBoards')}
             </button>
          </div>
       </div>
@@ -244,12 +246,13 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                   key={article.id} 
                   article={article} 
                   onOpen={onOpenArticle}
+                  locale={locale}
                 />
               ))}
             </MasonryGrid>
            ) : (
              <div className="text-center py-12 text-gray-400">
-               <p>No publications yet.</p>
+               <p>{t(locale, 'profile.noPublications')}</p>
              </div>
            )
         ) : (
@@ -257,19 +260,19 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               <div className="text-center py-20 bg-gray-50 dark:bg-white/5 rounded-3xl max-w-2xl mx-auto px-6">
                 <FolderOpen size={48} className="mx-auto mb-4 text-gray-300 dark:text-gray-600" />
                 <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
-                  {isOwnProfile ? "You haven't saved any boards yet" : "No public boards yet"}
+                  {isOwnProfile ? t(locale, 'profile.noOwnBoards') : t(locale, 'profile.noPublicBoards')}
                 </h3>
                 <p className="text-gray-500 dark:text-gray-400 mb-8 max-w-xs mx-auto">
                   {isOwnProfile 
-                    ? "Organize your research by creating boards for different topics and projects. Create your first board!" 
-                    : "This researcher hasn't shared any boards yet."}
+                    ? t(locale, 'profile.createBoardHint')
+                    : t(locale, 'profile.noSharedBoards')}
                 </p>
                 {isOwnProfile && (
                   <button 
                     onClick={() => setIsCreateModalOpen(true)}
                     className="bg-primary text-white px-8 py-3 rounded-full font-bold hover:bg-red-700 transition-colors shadow-lg flex items-center gap-2 mx-auto"
                   >
-                    <Plus size={20} /> Create Board
+                    <Plus size={20} /> {t(locale, 'profile.createBoard')}
                   </button>
                 )}
               </div>
@@ -287,7 +290,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                             <Plus size={24} />
                           </div>
                       </div>
-                      <h3 className="font-bold text-gray-900 dark:text-white text-lg leading-tight">Create Board</h3>
+                      <h3 className="font-bold text-gray-900 dark:text-white text-lg leading-tight">{t(locale, 'profile.createBoard')}</h3>
                     </div>
                 )}
 
@@ -327,20 +330,20 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                                       onClick={(e) => { e.stopPropagation(); setCollectionToEdit(col); setActiveMenuId(null); }}
                                       className="w-full flex items-center gap-3 px-4 py-3 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-white/5 text-left"
                                     >
-                                      <Settings size={16} /> Settings
+                                      <Settings size={16} /> {t(locale, 'profile.settingsMenu')}
                                     </button>
                                     <button 
                                       onClick={(e) => { e.stopPropagation(); handleShareCollection(col); }}
                                       className="w-full flex items-center gap-3 px-4 py-3 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-white/5 text-left"
                                     >
-                                      <Share2 size={16} /> Share
+                                      <Share2 size={16} /> {t(locale, 'profile.share')}
                                     </button>
                                     <div className="h-px bg-gray-100 dark:bg-white/10 mx-2" />
                                     <button 
                                       onClick={(e) => { e.stopPropagation(); handleDeleteRequest(col); }}
                                       className="w-full flex items-center gap-3 px-4 py-3 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 text-left"
                                     >
-                                      <Trash2 size={16} /> Delete
+                                      <Trash2 size={16} /> {t(locale, 'profile.delete')}
                                     </button>
                                 </div>
                               )}
@@ -349,8 +352,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                       </div>
                       <h3 className="font-bold text-gray-900 dark:text-white text-lg leading-tight">{col.name}</h3>
                       <p className="text-gray-500 dark:text-gray-400 text-xs mt-1 flex items-center gap-2">
-                        {col.articleIds.length} Pins
-                        {col.isPrivate && <span className="bg-gray-200 dark:bg-white/10 text-gray-600 dark:text-gray-300 px-1.5 py-0.5 rounded text-[10px] flex items-center gap-1"><Lock size={10}/> Private</span>}
+                        {t(locale, 'profile.pins', { count: col.articleIds.length })}
+                        {col.isPrivate && <span className="bg-gray-200 dark:bg-white/10 text-gray-600 dark:text-gray-300 px-1.5 py-0.5 rounded text-[10px] flex items-center gap-1"><Lock size={10}/> {t(locale, 'profile.private')}</span>}
                       </p>
                     </div>
                 ))}
@@ -362,6 +365,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       {collectionToEdit && (
         <EditCollectionModal 
           collection={collectionToEdit}
+          locale={locale}
           onClose={() => setCollectionToEdit(null)}
           onUpdate={onUpdateCollection}
           onDelete={() => handleDeleteRequest(collectionToEdit)}
@@ -371,6 +375,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       {isCreateModalOpen && (
         <EditCollectionModal 
           onClose={() => setIsCreateModalOpen(false)}
+          locale={locale}
           onCreate={onCreateCollection}
         />
       )}

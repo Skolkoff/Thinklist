@@ -19,15 +19,16 @@ export const Tag: React.FC<TagProps> = ({ label, selected, onClick, size = 'md',
   return (
     <button
       onClick={onClick}
+      title={label}
       className={`
-        rounded-full font-medium transition-all duration-200 flex items-center gap-2
+        rounded-full font-medium transition-all duration-200 flex max-w-[13rem] shrink-0 items-center gap-2
         ${sizeClasses[size]}
         ${selected 
           ? 'bg-secondary dark:bg-white text-white dark:text-black border-transparent shadow-md transform scale-105' 
           : 'bg-gray-100 dark:bg-white/10 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-white/20 border border-transparent hover:scale-105'}
       `}
     >
-      <span>{label}</span>
+      <span className="min-w-0 truncate whitespace-nowrap">{label}</span>
       {count !== undefined && count > 0 && (
         <span className={`
           rounded-full flex items-center justify-center bg-black/10 dark:bg-white/20 

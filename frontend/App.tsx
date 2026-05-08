@@ -11,11 +11,20 @@ import { AuthGate } from './components/AuthGate';
 import { api } from './services/api';
 import { AVAILABLE_TAGS } from './services/mockData';
 import { Article, FilterState, ViewState, Collection, UserProfile, CollectionVisibility, Theme } from './types';
+import { LanguagePreference, Locale, resolveLocale, t } from './i18n';
 
 const App: React.FC = () => {
   // State
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [currentView, setCurrentView] = useState<ViewState>(ViewState.FEED);
+  const [languagePreference, setLanguagePreference] = useState<LanguagePreference>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('languagePreference') as LanguagePreference | null;
+      if (stored === 'system' || stored === 'en' || stored === 'ru') return stored;
+    }
+    return 'system';
+  });
+  const [locale, setLocale] = useState<Locale>(() => resolveLocale(languagePreference));
   
   // Theme State
   const [theme, setTheme] = useState<Theme>(() => {
@@ -77,6 +86,7 @@ const App: React.FC = () => {
       try {
         const user = await api.getCurrentUser();
         setCurrentUser(user);
+        setLanguagePreference(user.languagePreference || 'system');
         setProfileUserId(user.id); // Default to viewing own profile if navigated
         setAuthStatus('authenticated');
       } catch (error) {
@@ -102,6 +112,11 @@ const App: React.FC = () => {
     
     localStorage.setItem('theme', theme);
   }, [theme]);
+
+  useEffect(() => {
+    setLocale(resolveLocale(languagePreference));
+    localStorage.setItem('languagePreference', languagePreference);
+  }, [languagePreference]);
 
   // Data Fetching
   const fetchContent = useCallback(async () => {
@@ -174,6 +189,22 @@ const App: React.FC = () => {
     const updated = await api.updateUserProfile(data);
     setCurrentUser(updated);
     setViewedProfileUser(updated); // Update view if looking at self
+    setLanguagePreference(updated.languagePreference || 'system');
+  };
+
+  const handleLanguagePreferenceChange = async (next: LanguagePreference) => {
+    const previous = currentUser?.languagePreference || languagePreference;
+    setLanguagePreference(next);
+    if (!currentUser) return;
+    try {
+      const updated = await api.updateUserProfile({ languagePreference: next });
+      setCurrentUser(updated);
+      setViewedProfileUser(updated);
+      setLanguagePreference(updated.languagePreference || next);
+    } catch (error) {
+      setLanguagePreference(previous);
+      console.error("Failed to update language preference", error);
+    }
   };
 
   const handleAuthorClick = (authorName: string) => {
@@ -265,15 +296,17 @@ const App: React.FC = () => {
   }, []);
 
   if (authStatus === 'loading') {
-    return <div className="h-screen flex items-center justify-center bg-white dark:bg-dark-bg text-gray-900 dark:text-white">Loading...</div>;
+    return <div className="h-screen flex items-center justify-center bg-white dark:bg-dark-bg text-gray-900 dark:text-white">{t(locale, 'app.loading')}</div>;
   }
 
   if (showAuthGate) {
     return (
       <AuthGate
         availableTags={availableTags}
+        locale={locale}
         onAuthSuccess={(user) => {
           setCurrentUser(user);
+          setLanguagePreference(user.languagePreference || 'system');
           setProfileUserId(user.id);
           setAuthStatus('authenticated');
           setShowAuthGate(false);
@@ -287,6 +320,7 @@ const App: React.FC = () => {
     <div className="min-h-screen bg-white dark:bg-dark-bg transition-colors duration-300">
       <Navbar 
         user={currentUser} 
+        locale={locale}
         searchQuery={filters.searchQuery}
         onSearchChange={handleSearchChange}
         onNavigate={(view) => {
@@ -307,11 +341,12 @@ const App: React.FC = () => {
         onAuthClick={() => setShowAuthGate(true)}
       />
       
-      <main className="pt-2 pb-24 md:pb-0">
+      <main className="pb-24 md:pb-0">
         {currentView === ViewState.FEED && (
           <HomeFeed 
             articles={articles}
             availableTags={availableTags}
+            locale={locale}
             loading={loading}
             filters={filters}
             onTagToggle={handleTagToggle}
@@ -327,6 +362,7 @@ const App: React.FC = () => {
           <CollectionsFeed 
             articles={articles}
             collections={collections}
+            locale={locale}
             loading={loading}
             selectedCollectionId={selectedCollectionId}
             onSelectCollection={setSelectedCollectionId}
@@ -341,6 +377,7 @@ const App: React.FC = () => {
         {currentView === ViewState.PROFILE && currentUser && viewedProfileUser && (
           <ProfileView 
             user={viewedProfileUser}
+            locale={locale}
             isOwnProfile={viewedProfileUser.id === currentUser.id}
             collections={collections}
             articles={profileArticles}
@@ -358,6 +395,7 @@ const App: React.FC = () => {
       {selectedArticle && (
         <ArticleModal 
           article={selectedArticle} 
+          locale={locale}
           onClose={() => setSelectedArticle(null)}
           onAuthorClick={handleAuthorClick}
           onSave={handleOpenSaveModal}
@@ -373,6 +411,9 @@ const App: React.FC = () => {
           user={currentUser}
           isOpen={isEditProfileOpen}
           availableTags={availableTags}
+          locale={locale}
+          currentLanguagePreference={languagePreference}
+          onLanguagePreferenceChange={handleLanguagePreferenceChange}
             onClose={() => setIsEditProfileOpen(false)}
             onSave={handleUpdateProfile}
             onChangePassword={api.changePassword}
@@ -386,6 +427,7 @@ const App: React.FC = () => {
           isOpen={isSaveModalOpen}
           onClose={() => setIsSaveModalOpen(false)}
           collections={collections}
+          locale={locale}
           onSaveToCollection={handleSaveToCollection}
           onCreateCollection={handleCreateAndSave}
         />

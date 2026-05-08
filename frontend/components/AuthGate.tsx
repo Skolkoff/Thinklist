@@ -5,6 +5,7 @@ import { RegisterStepAccount } from './RegisterStepAccount';
 import { RegisterStepAvatar } from './RegisterStepAvatar';
 import { RegisterStepInterests } from './RegisterStepInterests';
 import { RegisterStepBio } from './RegisterStepBio';
+import { Locale, t } from '../i18n';
 
 const PRESET_AVATARS = [
   '/images/avatars/avatar-1.svg',
@@ -19,6 +20,7 @@ type RegisterStep = 'account' | 'avatar' | 'interests' | 'bio';
 
 interface AuthGateProps {
   availableTags: string[];
+  locale: Locale;
   onAuthSuccess: (user: UserProfile) => void;
   onClose?: () => void;
 }
@@ -36,7 +38,7 @@ const parseErrorMessage = (error: unknown): string => {
   return 'Something went wrong. Please try again.';
 };
 
-export const AuthGate: React.FC<AuthGateProps> = ({ availableTags, onAuthSuccess, onClose }) => {
+export const AuthGate: React.FC<AuthGateProps> = ({ availableTags, locale, onAuthSuccess, onClose }) => {
   const [mode, setMode] = useState<'login' | 'register'>('register');
   const [step, setStep] = useState<RegisterStep>('account');
   const [loading, setLoading] = useState(false);
@@ -69,19 +71,19 @@ export const AuthGate: React.FC<AuthGateProps> = ({ availableTags, onAuthSuccess
     const nickname = accountData.nickname.trim();
 
     if (!email || !email.includes('@')) {
-      setError('Please enter a valid email.');
+      setError(t(locale, 'auth.validEmailError'));
       return;
     }
     if (accountData.password.length < 8) {
-      setError('Password must be at least 8 characters.');
+      setError(t(locale, 'auth.passwordLengthError'));
       return;
     }
     if (accountData.password !== accountData.confirmPassword) {
-      setError('Passwords do not match.');
+      setError(t(locale, 'auth.passwordMatchError'));
       return;
     }
     if (!nickname) {
-      setError('Please choose a nickname.');
+      setError(t(locale, 'auth.nicknameRequiredError'));
       return;
     }
 
@@ -89,7 +91,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({ availableTags, onAuthSuccess
     try {
       const nicknameCheck = await api.checkNickname(nickname);
       if (!nicknameCheck.available) {
-        setError('Nickname is already taken.');
+        setError(t(locale, 'auth.nicknameTakenError'));
         setLoading(false);
         return;
       }
@@ -173,11 +175,11 @@ export const AuthGate: React.FC<AuthGateProps> = ({ availableTags, onAuthSuccess
     resetErrors();
     const email = loginData.email.trim();
     if (!email || !email.includes('@')) {
-      setError('Please enter a valid email.');
+      setError(t(locale, 'auth.validEmailError'));
       return;
     }
     if (!loginData.password) {
-      setError('Password is required.');
+      setError(t(locale, 'auth.passwordRequiredError'));
       return;
     }
 
@@ -203,7 +205,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({ availableTags, onAuthSuccess
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-gray-400">SciVise</p>
               <h1 className="text-2xl font-bold">
-                {mode === 'register' ? 'Create account' : 'Welcome back'}
+                {mode === 'register' ? t(locale, 'auth.createAccount') : t(locale, 'auth.welcomeBack')}
               </h1>
             </div>
           </div>
@@ -217,7 +219,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({ availableTags, onAuthSuccess
               }}
               className={`rounded-full px-4 py-2 ${mode === 'register' ? 'bg-white shadow-sm' : 'text-gray-500'}`}
             >
-              Register
+              {t(locale, 'auth.register')}
             </button>
             <button
               type="button"
@@ -227,7 +229,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({ availableTags, onAuthSuccess
               }}
               className={`rounded-full px-4 py-2 ${mode === 'login' ? 'bg-white shadow-sm' : 'text-gray-500'}`}
             >
-              Login
+              {t(locale, 'auth.login')}
             </button>
           </div>
         </div>
@@ -238,7 +240,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({ availableTags, onAuthSuccess
               onClick={onClose}
               className="text-xs font-semibold uppercase tracking-wide text-gray-400 hover:text-gray-600"
             >
-              Continue browsing
+              {t(locale, 'auth.continueBrowsing')}
             </button>
           </div>
         )}
@@ -246,8 +248,8 @@ export const AuthGate: React.FC<AuthGateProps> = ({ availableTags, onAuthSuccess
         {mode === 'register' && (
           <div className="mt-6">
             <div className="flex items-center justify-between text-xs font-semibold text-gray-400">
-              <span>Step {stepIndex} of {steps.length}</span>
-              <span className="uppercase tracking-[0.2em]">Onboarding</span>
+              <span>{t(locale, 'auth.step', { current: stepIndex, total: steps.length })}</span>
+              <span className="uppercase tracking-[0.2em]">{t(locale, 'auth.onboarding')}</span>
             </div>
             <div className="mt-3 h-2 rounded-full bg-gray-100">
               <div
@@ -271,6 +273,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({ availableTags, onAuthSuccess
               onChange={setAccountData}
               onSubmit={handleRegisterAccount}
               loading={loading}
+              locale={locale}
             />
           )}
 
@@ -283,6 +286,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({ availableTags, onAuthSuccess
               onNext={handleAvatarNext}
               onSkip={handleSkipAvatar}
               loading={loading}
+              locale={locale}
             />
           )}
 
@@ -290,6 +294,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({ availableTags, onAuthSuccess
             <RegisterStepInterests
               tags={availableTags}
               selected={profileData.interests}
+              locale={locale}
               onToggle={(tag) =>
                 setProfileData((prev) => ({
                   ...prev,
@@ -313,13 +318,14 @@ export const AuthGate: React.FC<AuthGateProps> = ({ availableTags, onAuthSuccess
               onFinish={handleFinish}
               onSkip={handleSkipBio}
               loading={loading}
+              locale={locale}
             />
           )}
 
           {mode === 'login' && (
             <div className="space-y-5">
               <div>
-                <label className="block text-xs font-semibold text-gray-500 mb-2">Email</label>
+                <label className="block text-xs font-semibold text-gray-500 mb-2">{t(locale, 'auth.email')}</label>
                 <input
                   type="email"
                   value={loginData.email}
@@ -329,13 +335,13 @@ export const AuthGate: React.FC<AuthGateProps> = ({ availableTags, onAuthSuccess
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-gray-500 mb-2">Password</label>
+                <label className="block text-xs font-semibold text-gray-500 mb-2">{t(locale, 'auth.password')}</label>
                 <input
                   type="password"
                   value={loginData.password}
                   onChange={(event) => setLoginData((prev) => ({ ...prev, password: event.target.value }))}
                   className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-gray-900 outline-none focus:border-gray-400"
-                  placeholder="Your password"
+                  placeholder={t(locale, 'auth.yourPassword')}
                 />
               </div>
               <button
@@ -344,7 +350,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({ availableTags, onAuthSuccess
                 disabled={loading}
                 className="w-full rounded-full bg-black px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-gray-900 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {loading ? 'Signing in...' : 'Sign in'}
+                {loading ? t(locale, 'auth.signingIn') : t(locale, 'auth.signIn')}
               </button>
             </div>
           )}

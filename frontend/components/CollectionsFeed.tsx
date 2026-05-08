@@ -5,12 +5,14 @@ import { Tag } from './Tag';
 import { MasonryGrid } from './MasonryGrid';
 import { ArticleCard } from './ArticleCard';
 import { Sparkles } from 'lucide-react';
+import { Locale, t } from '../i18n';
 
 const ALL_ARTICLES_ID = 'all';
 
 interface CollectionsFeedProps {
   articles: Article[];
   collections: Collection[];
+  locale: Locale;
   loading: boolean;
   selectedCollectionId: string | null;
   onSelectCollection: (id: string | null) => void;
@@ -24,6 +26,7 @@ interface CollectionsFeedProps {
 export const CollectionsFeed: React.FC<CollectionsFeedProps> = ({
   articles,
   collections,
+  locale,
   loading,
   selectedCollectionId,
   onSelectCollection,
@@ -129,17 +132,17 @@ export const CollectionsFeed: React.FC<CollectionsFeedProps> = ({
       {/* Collections Filter Bar */}
       <div className="flex items-center gap-2 overflow-x-auto no-scrollbar px-4 md:px-8 py-6 max-w-[2000px] mx-auto sticky top-[72px] z-30 bg-white/95 dark:bg-dark-bg/95 backdrop-blur-sm transition-colors">
         <span className="text-sm font-semibold text-gray-900 dark:text-white whitespace-nowrap mr-2">
-           Boards:
+           {t(locale, 'collections.boards')}
         </span>
         
         <Tag 
-          label="All Articles" 
+          label={t(locale, 'collections.allArticles')} 
           selected={selectedCollectionId === ALL_ARTICLES_ID}
           onClick={() => onSelectCollection(ALL_ARTICLES_ID)}
         />
 
         <Tag 
-          label="All Boards" 
+          label={t(locale, 'collections.allBoards')} 
           selected={selectedCollectionId === null}
           onClick={() => onSelectCollection(null)}
         />
@@ -159,7 +162,7 @@ export const CollectionsFeed: React.FC<CollectionsFeedProps> = ({
         <div className="flex justify-center items-center h-64 text-gray-400">
            <div className="animate-pulse flex flex-col items-center">
              <div className="w-12 h-12 bg-gray-200 dark:bg-white/10 rounded-full mb-4"></div>
-             <p>Generating suggestions...</p>
+             <p>{t(locale, 'collections.loading')}</p>
            </div>
         </div>
       ) : (
@@ -168,7 +171,7 @@ export const CollectionsFeed: React.FC<CollectionsFeedProps> = ({
             <>
               <div className="px-4 md:px-8 pb-4 max-w-[2000px] mx-auto flex items-center gap-2 text-gray-600 dark:text-gray-400">
                 <span className="text-sm font-medium">
-                  {isAllArticlesView ? "All Articles" : selectedCollection?.name || "Board"}
+                  {isAllArticlesView ? t(locale, 'collections.allArticles') : selectedCollection?.name || t(locale, 'collections.board')}
                 </span>
               </div>
 
@@ -176,14 +179,14 @@ export const CollectionsFeed: React.FC<CollectionsFeedProps> = ({
                 <div className="text-center py-14 text-gray-500">
                   <p className="text-xl mb-4">
                     {isAllArticlesView
-                      ? "Save articles to build your library."
-                      : "This board is empty."}
+                      ? t(locale, 'collections.saveToBuild')
+                      : t(locale, 'collections.emptyBoard')}
                   </p>
                   <button 
                     onClick={onNavigateHome}
                     className="bg-black dark:bg-white text-white dark:text-black px-6 py-2 rounded-full font-semibold hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors"
                   >
-                    Explore Feed
+                    {t(locale, 'collections.exploreFeed')}
                   </button>
                 </div>
               ) : (
@@ -194,6 +197,7 @@ export const CollectionsFeed: React.FC<CollectionsFeedProps> = ({
                       article={article} 
                       onOpen={onOpenArticle}
                       onSave={onSaveArticle}
+                      locale={locale}
                       canInteract={canInteract}
                       onRequireAuth={onRequireAuth}
                     />
@@ -207,8 +211,8 @@ export const CollectionsFeed: React.FC<CollectionsFeedProps> = ({
             <Sparkles size={16} />
             <span className="text-sm font-medium">
               {isSuggestionsView
-                ? "Curated suggestions from all your boards"
-                : "More ideas inspired by this board"}
+                ? t(locale, 'collections.suggestionsAll')
+                : t(locale, 'collections.suggestionsBoard')}
             </span>
           </div>
 
@@ -216,14 +220,14 @@ export const CollectionsFeed: React.FC<CollectionsFeedProps> = ({
             <div className="text-center py-20 text-gray-500">
               <p className="text-xl mb-4">
                 {hasSavedArticles
-                  ? "Not enough data for suggestions yet."
-                  : "Save some articles to get personalized board recommendations."}
+                  ? t(locale, 'collections.notEnoughData')
+                  : t(locale, 'collections.saveForSuggestions')}
               </p>
               <button 
                 onClick={onNavigateHome}
                 className="bg-black dark:bg-white text-white dark:text-black px-6 py-2 rounded-full font-semibold hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors"
               >
-                Explore Feed
+                {t(locale, 'collections.exploreFeed')}
               </button>
             </div>
           ) : (
@@ -234,6 +238,7 @@ export const CollectionsFeed: React.FC<CollectionsFeedProps> = ({
                   article={article} 
                   onOpen={onOpenArticle}
                   onSave={onSaveArticle}
+                  locale={locale}
                   canInteract={canInteract}
                   onRequireAuth={onRequireAuth}
                 />

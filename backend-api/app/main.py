@@ -39,6 +39,7 @@ logger = logging.getLogger("app.feed")
 CANDIDATE_POOL_MIN = 500
 CANDIDATE_POOL_MAX = 3000
 CANDIDATE_POOL_DEFAULT = 1000
+LANGUAGE_PREFERENCES = {"system", "en", "ru"}
 
 
 def _normalize_nickname(value: str) -> str:
@@ -106,6 +107,7 @@ def _user_profile_dict(user: User, interests: list[str] | None = None) -> dict:
         "fieldOfStudy": user.field_of_study,
         "bio": user.bio,
         "interests": interests or [],
+        "languagePreference": user.language_preference or "system",
     }
 
 
@@ -401,6 +403,7 @@ class UserProfileUpdate(BaseModel):
     field_of_study: str | None = None
     bio: str | None = None
     interests: list[str] | None = None
+    language_preference: str | None = None
 
 
 class CollectionCreateIn(BaseModel):
@@ -552,6 +555,17 @@ def feed(
                     .distinct()
                     .all()
                 ]
+                hidden_ids = [
+                    row[0]
+                    for row in db.query(Event.paper_id)
+                    .filter(
+                        Event.user_id == user_id,
+                        Event.type == EventType.HIDE,
+                    )
+                    .distinct()
+                    .all()
+                ]
+                user_interests = _get_user_interests(db, user_id)
 
                 ranked_ids: list[int] | None = None
                 if positive_ids:
@@ -562,6 +576,9 @@ def feed(
                                 "user_id": user_id,
                                 "positive_paper_ids": positive_ids,
                                 "candidate_paper_ids": candidate_ids,
+                                "user_interests": user_interests,
+                                "hidden_paper_ids": hidden_ids,
+                                "exploration_ratio": 0.2,
                             },
                             timeout=settings.ml_request_timeout_seconds,
                         )
@@ -985,6 +1002,10 @@ def update_me(
         current_user.field_of_study = payload.field_of_study
     if payload.bio is not None:
         current_user.bio = payload.bio
+    if payload.language_preference is not None:
+        if payload.language_preference not in LANGUAGE_PREFERENCES:
+            raise HTTPException(status_code=400, detail="Invalid language preference")
+        current_user.language_preference = payload.language_preference
     db.commit()
     db.refresh(current_user)
 

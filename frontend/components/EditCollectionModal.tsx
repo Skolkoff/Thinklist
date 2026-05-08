@@ -2,6 +2,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Collection, CollectionVisibility } from '../types';
 import { X, Lock, Globe, UserCheck, Trash2 } from 'lucide-react';
+import { Locale, t } from '../i18n';
 
 interface EditCollectionModalProps {
   collection?: Collection; // Optional for Create Mode
@@ -9,10 +10,11 @@ interface EditCollectionModalProps {
   onUpdate?: (id: string, data: Partial<Collection>) => void;
   onDelete?: () => void;
   onCreate?: (name: string, visibility: CollectionVisibility) => void;
+  locale: Locale;
 }
 
 export const EditCollectionModal: React.FC<EditCollectionModalProps> = ({
-  collection, onClose, onUpdate, onDelete, onCreate
+  collection, onClose, onUpdate, onDelete, onCreate, locale
 }) => {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const isEditing = !!collection;
@@ -44,9 +46,9 @@ export const EditCollectionModal: React.FC<EditCollectionModalProps> = ({
   };
 
   const visibilityOptions: { value: CollectionVisibility; label: string; icon: React.ReactNode }[] = [
-    { value: 'public', label: 'Public', icon: <Globe size={14} /> },
-    { value: 'followers', label: 'Followers', icon: <UserCheck size={14} /> },
-    { value: 'private', label: 'Private', icon: <Lock size={14} /> },
+    { value: 'public', label: t(locale, 'board.public'), icon: <Globe size={14} /> },
+    { value: 'followers', label: t(locale, 'board.followers'), icon: <UserCheck size={14} /> },
+    { value: 'private', label: t(locale, 'board.private'), icon: <Lock size={14} /> },
   ];
 
   return (
@@ -60,9 +62,9 @@ export const EditCollectionModal: React.FC<EditCollectionModalProps> = ({
       >
         <div className="p-4 text-center border-b border-gray-100 dark:border-dark-border relative">
           <h2 id="edit-board-title" className="font-bold text-lg text-gray-900 dark:text-white">
-            {isEditing ? 'Edit Board' : 'Create Board'}
+            {isEditing ? t(locale, 'board.edit') : t(locale, 'board.create')}
           </h2>
-          <button ref={closeButtonRef} onClick={onClose} aria-label="Close board dialog" className="absolute right-4 top-1/2 -translate-y-1/2 p-1.5 hover:bg-gray-100 dark:hover:bg-white/10 rounded-full text-gray-500 dark:text-gray-400">
+          <button ref={closeButtonRef} onClick={onClose} aria-label={t(locale, 'board.close')} className="absolute right-4 top-1/2 -translate-y-1/2 p-1.5 hover:bg-gray-100 dark:hover:bg-white/10 rounded-full text-gray-500 dark:text-gray-400">
             <X size={20} />
           </button>
         </div>
@@ -70,11 +72,11 @@ export const EditCollectionModal: React.FC<EditCollectionModalProps> = ({
         <div className="p-6">
             <div className="flex flex-col gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Board Name</label>
+                  <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">{t(locale, 'board.name')}</label>
                   <input 
                     type="text" 
                     autoFocus
-                    placeholder="e.g., Quantum Physics" 
+                    placeholder={t(locale, 'board.namePlaceholder')} 
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     className="w-full bg-gray-100 dark:bg-dark-bg rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-gray-200 dark:focus:ring-gray-700 text-gray-900 dark:text-white placeholder:text-gray-500 dark:placeholder:text-gray-400"
@@ -83,7 +85,7 @@ export const EditCollectionModal: React.FC<EditCollectionModalProps> = ({
                 </div>
                 
                 <div>
-                  <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Visibility</label>
+                  <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">{t(locale, 'board.visibility')}</label>
                   <div className="grid grid-cols-2 gap-2">
                       {visibilityOptions.map(opt => (
                         <button
@@ -106,7 +108,7 @@ export const EditCollectionModal: React.FC<EditCollectionModalProps> = ({
                    disabled={!name.trim()}
                    className={`w-full py-3 rounded-full font-bold transition-colors mt-2 ${!name.trim() ? 'bg-gray-200 dark:bg-white/10 text-gray-400' : 'bg-primary text-white hover:bg-red-700'}`}
                 >
-                   {isEditing ? 'Save Changes' : 'Create Board'}
+                   {isEditing ? t(locale, 'board.saveChanges') : t(locale, 'board.create')}
                 </button>
 
                 {isEditing && onDelete && (
@@ -115,7 +117,7 @@ export const EditCollectionModal: React.FC<EditCollectionModalProps> = ({
                        onClick={onDelete}
                        className="text-red-600 dark:text-red-400 font-semibold text-sm flex items-center gap-2 px-4 py-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors"
                      >
-                       <Trash2 size={16} /> Delete Board
+                       <Trash2 size={16} /> {t(locale, 'board.delete')}
                      </button>
                   </div>
                 )}
