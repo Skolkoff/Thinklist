@@ -11,6 +11,8 @@ from app.models.user import (  # noqa: F401
     Event,
     Collection,
     CollectionItem,
+    ArticleComment,
+    CommentReaction,
     EventType,
     IngestionRun,
     Chat,
@@ -19,5 +21,4 @@ from app.models.user import (  # noqa: F401
     MessageReaction,
     UserBlock,
 )
-
 

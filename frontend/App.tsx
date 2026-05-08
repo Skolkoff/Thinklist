@@ -163,6 +163,10 @@ const App: React.FC = () => {
 
   const handleSearchChange = (q: string) => {
     setFilters(prev => ({ ...prev, searchQuery: q }));
+    if (q.trim().length >= 2 && currentView !== ViewState.FEED) {
+      setSelectedCollectionId(null);
+      setCurrentView(ViewState.FEED);
+    }
   };
 
   const handleUpdateProfile = async (data: Partial<UserProfile>) => {
@@ -172,13 +176,11 @@ const App: React.FC = () => {
     setViewedProfileUser(updated); // Update view if looking at self
   };
 
-  const handleAuthorClick = (authorId: string) => {
-    setSelectedArticle(null); // Close modal
-    if (currentUser && authorId.includes(currentUser.id)) {
-       handleNavigateToProfile(currentUser.id);
-    } else {
-       handleNavigateToProfile('u3');
-    }
+  const handleAuthorClick = (authorName: string) => {
+    setSelectedArticle(null);
+    setFilters(prev => ({ ...prev, searchQuery: authorName }));
+    setSelectedCollectionId(null);
+    setCurrentView(ViewState.FEED);
   };
 
   // Save Flow
@@ -256,6 +258,12 @@ const App: React.FC = () => {
       .slice(0, 3);
   }, [selectedArticle, articles]);
 
+  const profileArticles = useMemo<Article[]>(() => {
+    // There is no user-authored publication relation in the current API.
+    // Keep the profile tab honest instead of showing the global feed as "my" work.
+    return [];
+  }, []);
+
   if (authStatus === 'loading') {
     return <div className="h-screen flex items-center justify-center bg-white dark:bg-dark-bg text-gray-900 dark:text-white">Loading...</div>;
   }
@@ -299,7 +307,7 @@ const App: React.FC = () => {
         onAuthClick={() => setShowAuthGate(true)}
       />
       
-      <main className="pt-2">
+      <main className="pt-2 pb-24 md:pb-0">
         {currentView === ViewState.FEED && (
           <HomeFeed 
             articles={articles}
@@ -335,7 +343,7 @@ const App: React.FC = () => {
             user={viewedProfileUser}
             isOwnProfile={viewedProfileUser.id === currentUser.id}
             collections={collections}
-            articles={articles}
+            articles={profileArticles}
             onEditProfile={() => setIsEditProfileOpen(true)}
             onOpenArticle={setSelectedArticle}
             onDeleteCollection={handleDeleteCollection}

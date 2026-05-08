@@ -30,17 +30,6 @@ export const MOCK_OTHER_USER: UserProfile = {
   interests: ['Quantum Physics', 'Astrophysics']
 };
 
-export const MOCK_AUTHOR_USER: UserProfile = {
-  id: 'u3',
-  name: 'Dr. James Doe',
-  nickname: 'jim_doe',
-  avatarUrl: 'https://picsum.photos/seed/user3/200/200',
-  workplace: 'Oxford University',
-  fieldOfStudy: 'Biology',
-  bio: 'Author of several papers on CRISPR.',
-  interests: ['CRISPR', 'Bioinformatics']
-};
-
 const SOURCES = ['Nature', 'Science', 'arXiv', 'IEEE Access', 'BioRxiv'];
 
 // Helper to generate deterministic articles

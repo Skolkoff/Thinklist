@@ -19,7 +19,19 @@ export interface Article {
   likes: number;
 }
 
-export type CollectionVisibility = 'public' | 'private' | 'friends' | 'followers';
+export interface ArticleComment {
+  id: string;
+  paperId: string;
+  content: string;
+  author: UserProfile;
+  reactionCounts: Record<string, number>;
+  viewerReaction?: string | null;
+  canDelete?: boolean;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export type CollectionVisibility = 'public' | 'private' | 'followers';
 
 export interface Collection {
   id: string;
@@ -56,40 +68,3 @@ export interface FilterState {
 }
 
 export type Theme = 'light' | 'dark' | 'system';
-
-/**
- * Messenger specific types
- */
-export interface Reaction {
-  emoji: string;
-  count: number;
-  userReacted: boolean;
-}
-
-export interface Attachment {
-  type: 'text' | 'image' | 'video' | 'collection' | 'friend_request';
-  url?: string;
-  id?: string;
-  title?: string;
-  previewUrl?: string;
-}
-
-export interface Message {
-  id: string;
-  senderId: string;
-  text: string;
-  type: 'text' | 'image' | 'video' | 'collection' | 'friend_request';
-  attachment?: Attachment;
-  timestamp: string;
-  reactions: Reaction[];
-}
-
-export interface ChatSession {
-  id: string;
-  participantId: string;
-  participant: UserProfile & { isFriend?: boolean };
-  messages: Message[];
-  lastMessageAt: string;
-  category: 'primary' | 'requests';
-  unread?: boolean;
-}

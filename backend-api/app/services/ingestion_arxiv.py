@@ -182,7 +182,7 @@ def run_arxiv_ingestion(db: Session) -> Dict[str, Any]:
 
     config: Dict[str, Any] = source.config or {}
     categories: List[str] = config.get("categories") or ["cs.AI", "cs.CL"]
-    limit: int = int(config.get("limit") or 100)
+    limit: int = int(config.get("limit") or 1000)
 
     entries = fetch_arxiv_entries(categories, limit)
 

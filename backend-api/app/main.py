@@ -11,27 +11,25 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import and_, func, or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import get_settings
 from app.db.session import get_db  # dependency для сессии БД
 from app.services.ingestion_arxiv import run_arxiv_ingestion
 from app.models import (
-    Chat,
-    ChatParticipant,
     Event,
     EventType,
     IngestionRun,
-    Message,
-    MessageReaction,
     Paper,
+    ArticleComment,
+    CommentReaction,
     Collection,
     CollectionItem,
     Source,
     Tag,
     User,
     UserInterest,
-    UserBlock,
 )
 
 
@@ -202,29 +200,38 @@ def _collection_to_dict(
     return payload
 
 
-def _message_reactions(message: Message, current_user_id: int) -> list[dict]:
-    buckets: dict[str, dict] = {}
-    for reaction in message.reactions:
-        item = buckets.setdefault(
-            reaction.emoji,
-            {"emoji": reaction.emoji, "count": 0, "userReacted": False},
+def _reaction_counts(reactions: list[CommentReaction]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for reaction in reactions:
+        counts[reaction.emoji] = counts.get(reaction.emoji, 0) + 1
+    return counts
+
+
+def _comment_to_dict(comment: ArticleComment, viewer_id: int | None = None) -> dict:
+    viewer_reaction = None
+    if viewer_id is not None:
+        viewer_reaction = next(
+            (
+                reaction.emoji
+                for reaction in comment.reactions
+                if reaction.user_id == viewer_id
+            ),
+            None,
         )
-        item["count"] += 1
-        if reaction.user_id == current_user_id:
-            item["userReacted"] = True
-    return list(buckets.values())
 
-
-def _message_to_dict(message: Message, current_user_id: int) -> dict:
     return {
-        "id": str(message.id),
-        "senderId": str(message.sender_id),
-        "text": message.text or "",
-        "type": message.type,
-        "attachment": message.attachment,
-        "timestamp": message.created_at.isoformat(),
-        "reactions": _message_reactions(message, current_user_id),
+        "id": str(comment.id),
+        "paperId": str(comment.paper_id),
+        "content": comment.content,
+        "author": _user_profile_dict(comment.author),
+        "reactionCounts": _reaction_counts(comment.reactions),
+        "viewerReaction": viewer_reaction,
+        "canDelete": viewer_id == comment.author_id,
+        "createdAt": comment.created_at.isoformat() if comment.created_at else None,
+        "updatedAt": comment.updated_at.isoformat() if comment.updated_at else None,
     }
+
+
 app = FastAPI(
     title=settings.app_title,
     version=settings.app_version,
@@ -414,18 +421,12 @@ class CollectionItemIn(BaseModel):
     paper_id: int
 
 
-class MessageSendIn(BaseModel):
-    text: str | None = None
-    type: str = "text"
-    attachment: dict | None = None
+class CommentCreateIn(BaseModel):
+    content: str = Field(min_length=1, max_length=2000)
 
 
-class ReactionIn(BaseModel):
-    emoji: str = Field(min_length=1, max_length=16)
-
-
-class ChatCreateIn(BaseModel):
-    participant_id: int
+class CommentReactionIn(BaseModel):
+    emoji: str = Field(default="heart", min_length=1, max_length=16)
 
 
 class EventIn(BaseModel):
@@ -736,6 +737,171 @@ def get_paper(paper_id: int, db: Session = Depends(get_db)) -> dict:
     return _paper_to_article(paper, like_map)
 
 
+@app.get("/papers/{paper_id}/comments")
+def list_article_comments(
+    paper_id: int,
+    request: Request,
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+) -> dict:
+    paper_exists = db.query(Paper.id).filter(Paper.id == paper_id).first()
+    if not paper_exists:
+        raise HTTPException(status_code=404, detail="Paper not found")
+
+    viewer_id = _get_optional_user_id(request, db)
+    base_query = (
+        db.query(ArticleComment)
+        .options(
+            selectinload(ArticleComment.author),
+            selectinload(ArticleComment.reactions),
+        )
+        .filter(ArticleComment.paper_id == paper_id)
+        .order_by(ArticleComment.created_at.asc(), ArticleComment.id.asc())
+    )
+    comments = base_query.offset(offset).limit(limit + 1).all()
+    page = comments[:limit]
+    next_offset = offset + len(page) if len(comments) > limit else None
+    return {
+        "items": [_comment_to_dict(comment, viewer_id) for comment in page],
+        "nextOffset": next_offset,
+    }
+
+
+@app.post("/papers/{paper_id}/comments", status_code=201)
+def create_article_comment(
+    paper_id: int,
+    payload: CommentCreateIn,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    paper = db.query(Paper).filter(Paper.id == paper_id).one_or_none()
+    if not paper:
+        raise HTTPException(status_code=404, detail="Paper not found")
+
+    content = payload.content.strip()
+    if not content:
+        raise HTTPException(status_code=400, detail="Comment cannot be empty")
+
+    comment = ArticleComment(
+        paper_id=paper_id,
+        author_id=current_user.id,
+        content=content,
+    )
+    db.add(comment)
+    db.commit()
+    db.refresh(comment)
+
+    comment = (
+        db.query(ArticleComment)
+        .options(
+            selectinload(ArticleComment.author),
+            selectinload(ArticleComment.reactions),
+        )
+        .filter(ArticleComment.id == comment.id)
+        .one()
+    )
+    return _comment_to_dict(comment, current_user.id)
+
+
+@app.delete("/comments/{comment_id}")
+def delete_article_comment(
+    comment_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    comment = db.query(ArticleComment).filter(ArticleComment.id == comment_id).one_or_none()
+    if not comment:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    if comment.author_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    db.delete(comment)
+    db.commit()
+    return {"status": "ok"}
+
+
+@app.post("/comments/{comment_id}/reactions", status_code=201)
+def react_to_comment(
+    comment_id: int,
+    payload: CommentReactionIn,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    emoji = payload.emoji.strip() or "heart"
+    comment = db.query(ArticleComment).filter(ArticleComment.id == comment_id).one_or_none()
+    if not comment:
+        raise HTTPException(status_code=404, detail="Comment not found")
+
+    existing = (
+        db.query(CommentReaction)
+        .filter(
+            CommentReaction.comment_id == comment_id,
+            CommentReaction.user_id == current_user.id,
+            CommentReaction.emoji == emoji,
+        )
+        .one_or_none()
+    )
+    if not existing:
+        db.add(
+            CommentReaction(
+                comment_id=comment_id,
+                user_id=current_user.id,
+                emoji=emoji,
+            )
+        )
+        try:
+            db.commit()
+        except IntegrityError as exc:
+            db.rollback()
+            raise HTTPException(status_code=409, detail="Reaction already exists") from exc
+
+    comment = (
+        db.query(ArticleComment)
+        .options(
+            selectinload(ArticleComment.author),
+            selectinload(ArticleComment.reactions),
+        )
+        .filter(ArticleComment.id == comment_id)
+        .one()
+    )
+    return _comment_to_dict(comment, current_user.id)
+
+
+@app.delete("/comments/{comment_id}/reactions/{emoji}")
+def remove_comment_reaction(
+    comment_id: int,
+    emoji: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    reaction = (
+        db.query(CommentReaction)
+        .filter(
+            CommentReaction.comment_id == comment_id,
+            CommentReaction.user_id == current_user.id,
+            CommentReaction.emoji == emoji,
+        )
+        .one_or_none()
+    )
+    if reaction:
+        db.delete(reaction)
+        db.commit()
+
+    comment = (
+        db.query(ArticleComment)
+        .options(
+            selectinload(ArticleComment.author),
+            selectinload(ArticleComment.reactions),
+        )
+        .filter(ArticleComment.id == comment_id)
+        .one_or_none()
+    )
+    if not comment:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    return _comment_to_dict(comment, current_user.id)
+
+
 @app.get("/tags")
 def list_tags(db: Session = Depends(get_db)) -> dict:
     tags = db.query(Tag).order_by(Tag.name.asc()).all()
@@ -850,31 +1016,6 @@ def get_user_profile(user_id: int, db: Session = Depends(get_db)) -> dict:
         raise HTTPException(status_code=404, detail="User not found")
     interests = _get_user_interests(db, user.id)
     return _user_profile_dict(user, interests=interests)
-
-
-@app.get("/friends")
-def list_friends(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> dict:
-    blocked_ids = [
-        row[0]
-        for row in db.query(UserBlock.blocked_id)
-        .filter(UserBlock.blocker_id == current_user.id)
-        .all()
-    ]
-    users = (
-        db.query(User)
-        .filter(User.id != current_user.id, ~User.id.in_(blocked_ids))
-        .order_by(User.created_at.desc())
-        .all()
-    )
-    return {
-        "items": [
-            _user_profile_dict(user, interests=_get_user_interests(db, user.id))
-            for user in users
-        ]
-    }
 
 
 @app.post("/events", status_code=201)
@@ -1003,7 +1144,7 @@ def create_collection(
     db: Session = Depends(get_db),
 ) -> dict:
     visibility = payload.visibility or "public"
-    if visibility not in {"public", "private", "friends", "followers"}:
+    if visibility not in {"public", "private", "followers"}:
         visibility = "public"
     collection = Collection(
         user_id=current_user.id,
@@ -1045,7 +1186,7 @@ def update_collection(
     if payload.description is not None:
         collection.description = payload.description
     if payload.visibility is not None:
-        if payload.visibility not in {"public", "private", "friends", "followers"}:
+        if payload.visibility not in {"public", "private", "followers"}:
             raise HTTPException(status_code=400, detail="Invalid visibility")
         collection.visibility = payload.visibility
     if payload.cover_image is not None:
@@ -1148,233 +1289,6 @@ def remove_collection_item(
     )
     if item:
         db.delete(item)
-        db.commit()
-    return {"status": "ok"}
-
-
-@app.get("/chats")
-def list_chats(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> dict:
-    chats = (
-        db.query(Chat)
-        .join(ChatParticipant, ChatParticipant.chat_id == Chat.id)
-        .filter(ChatParticipant.user_id == current_user.id)
-        .options(
-            selectinload(Chat.participants).selectinload(ChatParticipant.user),
-            selectinload(Chat.messages).selectinload(Message.reactions),
-        )
-        .order_by(Chat.created_at.desc())
-        .all()
-    )
-
-    payload = []
-    for chat in chats:
-        participants = [p.user for p in chat.participants if p.user]
-        other = next((p for p in participants if p.id != current_user.id), None)
-        if not other:
-            continue
-
-        messages = sorted(chat.messages, key=lambda m: m.created_at)
-        last_message_at = (
-            messages[-1].created_at.isoformat()
-            if messages
-            else chat.created_at.isoformat()
-        )
-        payload.append(
-            {
-                "id": str(chat.id),
-                "participantId": str(other.id),
-                "participant": _user_profile_dict(
-                    other, interests=_get_user_interests(db, other.id)
-                ),
-                "messages": [
-                    _message_to_dict(message, current_user.id) for message in messages
-                ],
-                "lastMessageAt": last_message_at,
-                "category": "primary",
-                "unread": False,
-            }
-        )
-    return {"items": payload}
-
-
-@app.post("/chats", status_code=201)
-def start_chat(
-    payload: ChatCreateIn,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> dict:
-    if payload.participant_id == current_user.id:
-        raise HTTPException(status_code=400, detail="Cannot chat with self")
-
-    other = db.query(User).filter(User.id == payload.participant_id).one_or_none()
-    if not other:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    subq = (
-        db.query(ChatParticipant.chat_id)
-        .filter(ChatParticipant.user_id.in_([current_user.id, other.id]))
-        .group_by(ChatParticipant.chat_id)
-        .having(func.count(ChatParticipant.user_id) == 2)
-        .subquery()
-    )
-    existing = db.query(Chat).filter(Chat.id.in_(subq)).one_or_none()
-    if existing:
-        return {"chat_id": str(existing.id)}
-
-    chat = Chat()
-    db.add(chat)
-    db.commit()
-    db.refresh(chat)
-
-    db.add(ChatParticipant(chat_id=chat.id, user_id=current_user.id))
-    db.add(ChatParticipant(chat_id=chat.id, user_id=other.id))
-    db.commit()
-    return {"chat_id": str(chat.id)}
-
-
-@app.post("/chats/{chat_id}/messages", status_code=201)
-def send_message(
-    chat_id: int,
-    payload: MessageSendIn,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> dict:
-    participant = (
-        db.query(ChatParticipant)
-        .filter(
-            ChatParticipant.chat_id == chat_id,
-            ChatParticipant.user_id == current_user.id,
-        )
-        .one_or_none()
-    )
-    if not participant:
-        raise HTTPException(status_code=404, detail="Chat not found")
-
-    message = Message(
-        chat_id=chat_id,
-        sender_id=current_user.id,
-        type=payload.type,
-        text=payload.text,
-        attachment=payload.attachment,
-    )
-    db.add(message)
-    db.commit()
-    db.refresh(message)
-    return _message_to_dict(message, current_user.id)
-
-
-@app.post("/messages/{message_id}/reactions")
-def react_to_message(
-    message_id: int,
-    payload: ReactionIn,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> dict:
-    message = (
-        db.query(Message)
-        .options(selectinload(Message.reactions))
-        .filter(Message.id == message_id)
-        .one_or_none()
-    )
-    if not message:
-        raise HTTPException(status_code=404, detail="Message not found")
-
-    participant = (
-        db.query(ChatParticipant)
-        .filter(
-            ChatParticipant.chat_id == message.chat_id,
-            ChatParticipant.user_id == current_user.id,
-        )
-        .one_or_none()
-    )
-    if not participant:
-        raise HTTPException(status_code=403, detail="Forbidden")
-
-    existing = (
-        db.query(MessageReaction)
-        .filter(
-            MessageReaction.message_id == message_id,
-            MessageReaction.user_id == current_user.id,
-            MessageReaction.emoji == payload.emoji,
-        )
-        .one_or_none()
-    )
-    if existing:
-        db.delete(existing)
-        db.commit()
-    else:
-        db.add(
-            MessageReaction(
-                message_id=message_id,
-                user_id=current_user.id,
-                emoji=payload.emoji,
-            )
-        )
-        db.commit()
-
-    db.refresh(message)
-    db.expire(message, ["reactions"])
-    return _message_to_dict(message, current_user.id)
-
-
-@app.delete("/chats/{chat_id}")
-def delete_chat(
-    chat_id: int,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> dict:
-    chat = (
-        db.query(Chat)
-        .join(ChatParticipant, ChatParticipant.chat_id == Chat.id)
-        .filter(Chat.id == chat_id, ChatParticipant.user_id == current_user.id)
-        .one_or_none()
-    )
-    if not chat:
-        raise HTTPException(status_code=404, detail="Chat not found")
-    db.delete(chat)
-    db.commit()
-    return {"status": "ok"}
-
-
-@app.post("/chats/{chat_id}/clear")
-def clear_chat(
-    chat_id: int,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> dict:
-    participant = (
-        db.query(ChatParticipant)
-        .filter(
-            ChatParticipant.chat_id == chat_id,
-            ChatParticipant.user_id == current_user.id,
-        )
-        .one_or_none()
-    )
-    if not participant:
-        raise HTTPException(status_code=404, detail="Chat not found")
-    db.query(Message).filter(Message.chat_id == chat_id).delete()
-    db.commit()
-    return {"status": "ok"}
-
-
-@app.post("/users/{user_id}/block")
-def block_user(
-    user_id: int,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> dict:
-    if user_id == current_user.id:
-        raise HTTPException(status_code=400, detail="Cannot block self")
-    existing = (
-        db.query(UserBlock)
-        .filter(UserBlock.blocker_id == current_user.id, UserBlock.blocked_id == user_id)
-        .one_or_none()
-    )
-    if not existing:
-        db.add(UserBlock(blocker_id=current_user.id, blocked_id=user_id))
         db.commit()
     return {"status": "ok"}
 

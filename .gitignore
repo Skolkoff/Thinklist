@@ -2,8 +2,12 @@
 .idea/
 .vscode/
 
+DOCS
+output/
+
 .codex
 .playwright-mcp
+.playwright-cli/
 
 # Env files
 .env
@@ -22,6 +26,7 @@ node_modules/
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/
+frontend/.cache/
 
 # Python
 __pycache__/
@@ -31,6 +36,10 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
 *.egg-info/
 *.egg
 dist/
@@ -43,9 +52,14 @@ build/
 
 # Local data
 *.sqlite3
+*.db
 
-
-DOCS
+# Docs
+# Keep DOCS/sprint as the project knowledge base. Ignore only local binary source docs by default.
+DOCS/*.docx
+!DOCS/
+!DOCS/sprint/
+!DOCS/sprint/**
 BACKEND_IMPLEMENTATION_PLAN.md
 DOCKER_SETUP.md
 FRONTEND_REVIEW.md

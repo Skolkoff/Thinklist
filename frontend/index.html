@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0" />
     <title>SciVise</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <script>
       // Initialize theme
@@ -15,66 +15,6 @@
           document.documentElement.classList.remove('dark');
         }
       } catch (_) {}
-    </script>
-    <style>
-      body {
-        font-family: 'Inter', sans-serif;
-        background-color: #ffffff;
-        -webkit-font-smoothing: antialiased;
-        overflow-x: hidden;
-        transition: background-color 0.3s ease;
-      }
-      .dark body {
-        background-color: #0f0f0f;
-        color: #e5e5e5;
-      }
-      /* Hide scrollbar for clean UI but keep functionality */
-      .no-scrollbar::-webkit-scrollbar {
-        display: none;
-      }
-      .no-scrollbar {
-        -ms-overflow-style: none;
-        scrollbar-width: none;
-      }
-      /* Custom scrollbar for other elements */
-      .custom-scrollbar::-webkit-scrollbar {
-        width: 6px;
-      }
-      .custom-scrollbar::-webkit-scrollbar-track {
-        background: transparent;
-      }
-      .custom-scrollbar::-webkit-scrollbar-thumb {
-        background-color: rgba(156, 163, 175, 0.5);
-        border-radius: 20px;
-      }
-      .dark .custom-scrollbar::-webkit-scrollbar-thumb {
-        background-color: rgba(75, 85, 99, 0.5);
-      }
-    </style>
-    <script>
-      tailwind.config = {
-        darkMode: 'class',
-        theme: {
-          extend: {
-            colors: {
-              primary: '#E60023', /* Pinterest Red-ish */
-              secondary: '#111111',
-              scigray: '#E9E9E9',
-              muted: '#767676',
-              dark: {
-                bg: '#0f0f0f',
-                card: '#1e1e1e',
-                border: '#333333'
-              }
-            },
-            borderRadius: {
-              'xl': '1rem',
-              '2xl': '1.5rem',
-              '3xl': '2rem',
-            }
-          }
-        }
-      }
     </script>
   <script type="importmap">
 {

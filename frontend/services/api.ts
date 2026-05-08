@@ -1,12 +1,10 @@
 import {
   Article,
+  ArticleComment,
   Collection,
   CollectionVisibility,
   FilterState,
-  UserProfile,
-  ChatSession,
-  Message,
-  Attachment
+  UserProfile
 } from '../types';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
@@ -94,12 +92,20 @@ const normalizeArticle = (article: Article): Article => {
   };
 };
 
+const normalizeVisibility = (visibility: string | undefined): CollectionVisibility => {
+  if (visibility === 'private' || visibility === 'followers') {
+    return visibility;
+  }
+  return 'public';
+};
+
 const normalizeCollection = (collection: Collection): Collection => {
+  const visibility = normalizeVisibility(collection.visibility);
   return {
     ...collection,
     articleIds: collection.articleIds || [],
-    visibility: collection.visibility || 'public',
-    isPrivate: collection.visibility === 'private',
+    visibility,
+    isPrivate: visibility === 'private',
     articles: collection.articles ? collection.articles.map(normalizeArticle) : undefined
   };
 };
@@ -217,6 +223,39 @@ export const api = {
     return true;
   },
 
+  getArticleComments: async (articleId: string): Promise<ArticleComment[]> => {
+    const response = await request<{ items: ArticleComment[] }>(
+      `/papers/${articleId}/comments?limit=50`
+    );
+    return response.items || [];
+  },
+
+  addArticleComment: async (articleId: string, content: string): Promise<ArticleComment> => {
+    return request<ArticleComment>(`/papers/${articleId}/comments`, {
+      method: 'POST',
+      body: JSON.stringify({ content })
+    });
+  },
+
+  deleteArticleComment: async (commentId: string): Promise<boolean> => {
+    await request(`/comments/${commentId}`, { method: 'DELETE' });
+    return true;
+  },
+
+  reactToComment: async (commentId: string, emoji = 'heart'): Promise<ArticleComment> => {
+    return request<ArticleComment>(`/comments/${commentId}/reactions`, {
+      method: 'POST',
+      body: JSON.stringify({ emoji })
+    });
+  },
+
+  removeCommentReaction: async (commentId: string, emoji = 'heart'): Promise<ArticleComment> => {
+    return request<ArticleComment>(
+      `/comments/${commentId}/reactions/${encodeURIComponent(emoji)}`,
+      { method: 'DELETE' }
+    );
+  },
+
   getCurrentUser: async (): Promise<UserProfile> => {
     const response = await request<UserProfile>('/me');
     return applyCachedAvatar(response);
@@ -250,54 +289,5 @@ export const api = {
       body: JSON.stringify({ old_password: oldPassword, new_password: newPwd })
     });
     return true;
-  },
-
-  getChats: async (): Promise<ChatSession[]> => {
-    const response = await request<{ items: ChatSession[] }>('/chats');
-    return response.items;
-  },
-
-  getFriends: async (): Promise<UserProfile[]> => {
-    const response = await request<{ items: UserProfile[] }>('/friends');
-    return response.items;
-  },
-
-  sendMessage: async (chatId: string, text: string, type: string, attachment?: Attachment): Promise<void> => {
-    const payload = {
-      text,
-      type,
-      attachment: attachment || null
-    };
-    await request(`/chats/${chatId}/messages`, {
-      method: 'POST',
-      body: JSON.stringify(payload)
-    });
-  },
-
-  reactToMessage: async (chatId: string, messageId: string, emoji: string): Promise<void> => {
-    await request(`/messages/${messageId}/reactions`, {
-      method: 'POST',
-      body: JSON.stringify({ emoji })
-    });
-  },
-
-  deleteChat: async (chatId: string): Promise<void> => {
-    await request(`/chats/${chatId}`, { method: 'DELETE' });
-  },
-
-  clearChat: async (chatId: string): Promise<void> => {
-    await request(`/chats/${chatId}/clear`, { method: 'POST' });
-  },
-
-  blockUser: async (userId: string): Promise<void> => {
-    await request(`/users/${userId}/block`, { method: 'POST' });
-  },
-
-  startChat: async (userId: string): Promise<string> => {
-    const response = await request<{ chat_id: string }>('/chats', {
-      method: 'POST',
-      body: JSON.stringify({ participant_id: Number(userId) })
-    });
-    return response.chat_id;
   }
 };

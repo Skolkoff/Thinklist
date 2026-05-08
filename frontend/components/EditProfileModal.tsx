@@ -1,5 +1,5 @@
 
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { UserProfile, Theme } from '../types';
 import { X, Camera, Lock, Sun, Moon, Monitor } from 'lucide-react';
 
@@ -8,7 +8,7 @@ interface EditProfileModalProps {
   isOpen: boolean;
   availableTags: string[];
   onClose: () => void;
-  onSave: (data: Partial<UserProfile>) => void;
+  onSave: (data: Partial<UserProfile>) => Promise<void> | void;
   onChangePassword: (old: string, newP: string) => Promise<boolean>;
   currentTheme: Theme;
   onThemeChange: (t: Theme) => void;
@@ -34,7 +34,23 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
   });
 
   const [activeTab, setActiveTab] = useState<'profile' | 'settings'>('profile');
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const [passwordMessage, setPasswordMessage] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    closeButtonRef.current?.focus();
+    const handleKeydown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeydown);
+    return () => window.removeEventListener('keydown', handleKeydown);
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
@@ -61,28 +77,63 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
     fileInputRef.current?.click();
   };
 
-  const handleSaveProfile = () => {
-    onSave(formData);
-    onClose();
+  const handleSaveProfile = async () => {
+    setProfileError(null);
+    const name = formData.name.trim();
+    const nickname = formData.nickname.trim();
+    if (!name || !nickname) {
+      setProfileError("Name and nickname are required.");
+      return;
+    }
+
+    setIsSavingProfile(true);
+    try {
+      await onSave({
+        ...formData,
+        name,
+        nickname,
+        workplace: formData.workplace.trim(),
+        fieldOfStudy: formData.fieldOfStudy.trim(),
+        bio: formData.bio.trim()
+      });
+      onClose();
+    } catch (error) {
+      setProfileError(error instanceof Error ? error.message : "Failed to save profile.");
+    } finally {
+      setIsSavingProfile(false);
+    }
   };
 
   const handleSavePassword = async () => {
+    setPasswordMessage(null);
     if (passwordData.newPassword !== passwordData.confirmPassword) {
-      alert("Passwords do not match!");
+      setPasswordMessage({ type: 'error', text: "Passwords do not match." });
       return;
     }
-    await onChangePassword(passwordData.oldPassword, passwordData.newPassword);
-    alert("Password changed successfully!");
-    setPasswordData({ oldPassword: '', newPassword: '', confirmPassword: '' });
+    if (!passwordData.oldPassword || !passwordData.newPassword) {
+      setPasswordMessage({ type: 'error', text: "Current and new password are required." });
+      return;
+    }
+
+    setIsChangingPassword(true);
+    try {
+      await onChangePassword(passwordData.oldPassword, passwordData.newPassword);
+      setPasswordMessage({ type: 'success', text: "Password changed successfully." });
+      setPasswordData({ oldPassword: '', newPassword: '', confirmPassword: '' });
+    } catch (error) {
+      setPasswordMessage(error instanceof Error ? { type: 'error', text: error.message } : { type: 'error', text: "Failed to change password." });
+    } finally {
+      setIsChangingPassword(false);
+    }
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-      <div className="bg-white dark:bg-dark-card rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl transition-colors">
+      <div role="dialog" aria-modal="true" aria-labelledby="edit-profile-title" className="bg-white dark:bg-dark-card rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl transition-colors">
         {/* Header */}
         <div className="px-6 py-4 border-b border-gray-100 dark:border-dark-border flex justify-between items-center">
-          <h2 className="text-xl font-bold text-gray-900 dark:text-white">Edit Profile</h2>
-          <button onClick={onClose} className="p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-full text-gray-500 dark:text-gray-300">
+          <h2 id="edit-profile-title" className="text-xl font-bold text-gray-900 dark:text-white">Edit Profile</h2>
+          <button ref={closeButtonRef} onClick={onClose} aria-label="Close profile dialog" className="p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-full text-gray-500 dark:text-gray-300">
             <X size={24} />
           </button>
         </div>
@@ -215,6 +266,12 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
                   ))}
                 </div>
               </div>
+
+              {profileError && (
+                <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-medium text-red-700 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-200">
+                  {profileError}
+                </div>
+              )}
             </div>
           ) : (
             <div className="space-y-8">
@@ -282,13 +339,24 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
                     />
                   </div>
                 </div>
+
+                {passwordMessage && (
+                  <div className={`mt-4 rounded-xl border px-4 py-3 text-sm font-medium ${
+                    passwordMessage.type === 'success'
+                      ? 'border-green-100 bg-green-50 text-green-700 dark:border-green-900/40 dark:bg-green-900/20 dark:text-green-200'
+                      : 'border-red-100 bg-red-50 text-red-700 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-200'
+                  }`}>
+                    {passwordMessage.text}
+                  </div>
+                )}
                 
                 <div className="pt-6 flex justify-end">
                   <button 
                     onClick={handleSavePassword}
+                    disabled={isChangingPassword}
                     className="bg-gray-900 dark:bg-white text-white dark:text-black px-6 py-3 rounded-full font-bold hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors"
                   >
-                    Change Password
+                    {isChangingPassword ? "Changing..." : "Change Password"}
                   </button>
                 </div>
               </div>
@@ -301,15 +369,17 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
           <div className="p-4 border-t border-gray-100 dark:border-dark-border flex justify-end gap-3 bg-gray-50 dark:bg-dark-bg">
             <button 
               onClick={onClose}
+              disabled={isSavingProfile}
               className="px-5 py-2.5 rounded-full font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
             >
               Cancel
             </button>
             <button 
               onClick={handleSaveProfile}
-              className="px-5 py-2.5 rounded-full font-semibold bg-primary text-white hover:bg-red-700 transition-colors"
+              disabled={isSavingProfile}
+              className="px-5 py-2.5 rounded-full font-semibold bg-primary text-white hover:bg-red-700 transition-colors disabled:cursor-not-allowed disabled:opacity-60"
             >
-              Save Profile
+              {isSavingProfile ? "Saving..." : "Save Profile"}
             </button>
           </div>
         )}

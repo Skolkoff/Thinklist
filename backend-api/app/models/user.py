@@ -51,6 +51,12 @@ class User(Base):
     interests: Mapped[list["UserInterest"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
+    article_comments: Mapped[list["ArticleComment"]] = relationship(
+        back_populates="author", cascade="all, delete-orphan"
+    )
+    comment_reactions: Mapped[list["CommentReaction"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
 
 
 class Source(Base):
@@ -108,6 +114,9 @@ class Paper(Base):
     )
     # Связь с элементами коллекций через association table
     collection_items: Mapped[list["CollectionItem"]] = relationship(
+        back_populates="paper", cascade="all, delete-orphan"
+    )
+    comments: Mapped[list["ArticleComment"]] = relationship(
         back_populates="paper", cascade="all, delete-orphan"
     )
 
@@ -273,6 +282,64 @@ class IngestionRun(Base):
     added: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     skipped: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     failed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
+class ArticleComment(Base):
+    __tablename__ = "article_comments"
+    __table_args__ = (
+        Index("ix_article_comments_paper_created_at", "paper_id", "created_at"),
+        Index("ix_article_comments_author_id", "author_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    paper_id: Mapped[int] = mapped_column(
+        ForeignKey("papers.id", ondelete="CASCADE"), nullable=False
+    )
+    author_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped["DateTime"] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped["DateTime"] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    paper: Mapped["Paper"] = relationship(back_populates="comments")
+    author: Mapped["User"] = relationship(back_populates="article_comments")
+    reactions: Mapped[list["CommentReaction"]] = relationship(
+        back_populates="comment", cascade="all, delete-orphan"
+    )
+
+
+class CommentReaction(Base):
+    __tablename__ = "comment_reactions"
+    __table_args__ = (
+        UniqueConstraint(
+            "comment_id", "user_id", "emoji", name="uq_comment_reactions_comment_user_emoji"
+        ),
+        Index("ix_comment_reactions_comment_id", "comment_id"),
+        Index("ix_comment_reactions_user_id", "user_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    comment_id: Mapped[int] = mapped_column(
+        ForeignKey("article_comments.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    emoji: Mapped[str] = mapped_column(String(16), nullable=False)
+    created_at: Mapped["DateTime"] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    comment: Mapped["ArticleComment"] = relationship(back_populates="reactions")
+    user: Mapped["User"] = relationship(back_populates="comment_reactions")
 
 
 class Chat(Base):

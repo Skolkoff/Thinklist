@@ -1,7 +1,7 @@
 
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Collection, CollectionVisibility } from '../types';
-import { X, Plus, Lock, Globe, Users, UserCheck } from 'lucide-react';
+import { X, Plus, Lock, Globe, UserCheck, FolderOpen } from 'lucide-react';
 
 interface SaveBoardModalProps {
   isOpen: boolean;
@@ -14,10 +14,24 @@ interface SaveBoardModalProps {
 export const SaveBoardModal: React.FC<SaveBoardModalProps> = ({
   isOpen, onClose, collections, onSaveToCollection, onCreateCollection
 }) => {
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [newCollectionName, setNewCollectionName] = useState('');
   const [visibility, setVisibility] = useState<CollectionVisibility>('public');
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    closeButtonRef.current?.focus();
+    const handleKeydown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeydown);
+    return () => window.removeEventListener('keydown', handleKeydown);
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
@@ -25,9 +39,28 @@ export const SaveBoardModal: React.FC<SaveBoardModalProps> = ({
     c.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const handleCreate = () => {
+  const handleSaveToCollection = async (collectionId: string) => {
+    setError(null);
+    setPendingAction(collectionId);
+    try {
+      await Promise.resolve(onSaveToCollection(collectionId));
+    } catch {
+      setError('Could not save to this board.');
+      setPendingAction(null);
+    }
+  };
+
+  const handleCreate = async () => {
     if (newCollectionName.trim()) {
-      onCreateCollection(newCollectionName, visibility);
+      setError(null);
+      setPendingAction('create');
+      try {
+        await Promise.resolve(onCreateCollection(newCollectionName, visibility));
+      } catch {
+        setError('Could not create this board.');
+        setPendingAction(null);
+        return;
+      }
       setNewCollectionName('');
       setVisibility('public');
       setIsCreating(false);
@@ -36,7 +69,6 @@ export const SaveBoardModal: React.FC<SaveBoardModalProps> = ({
 
   const visibilityOptions: { value: CollectionVisibility; label: string; icon: React.ReactNode }[] = [
     { value: 'public', label: 'Public', icon: <Globe size={14} /> },
-    { value: 'friends', label: 'Friends', icon: <Users size={14} /> },
     { value: 'followers', label: 'Followers', icon: <UserCheck size={14} /> },
     { value: 'private', label: 'Private', icon: <Lock size={14} /> },
   ];
@@ -44,12 +76,15 @@ export const SaveBoardModal: React.FC<SaveBoardModalProps> = ({
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={onClose}>
       <div 
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="save-board-title"
         className="bg-white dark:bg-dark-card rounded-2xl w-full max-w-sm flex flex-col shadow-2xl overflow-hidden transition-colors"
         onClick={e => e.stopPropagation()}
       >
         <div className="p-4 text-center border-b border-gray-100 dark:border-dark-border relative">
-          <h2 className="font-bold text-lg text-gray-900 dark:text-white">Save to board</h2>
-          <button onClick={onClose} className="absolute right-4 top-1/2 -translate-y-1/2 p-1.5 hover:bg-gray-100 dark:hover:bg-white/10 rounded-full text-gray-500 dark:text-gray-400">
+          <h2 id="save-board-title" className="font-bold text-lg text-gray-900 dark:text-white">Save to board</h2>
+          <button ref={closeButtonRef} onClick={onClose} aria-label="Close save dialog" className="absolute right-4 top-1/2 -translate-y-1/2 p-1.5 hover:bg-gray-100 dark:hover:bg-white/10 rounded-full text-gray-500 dark:text-gray-400">
             <X size={20} />
           </button>
         </div>
@@ -77,12 +112,13 @@ export const SaveBoardModal: React.FC<SaveBoardModalProps> = ({
                    onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
                 />
                 
-                <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
+                <div className="grid grid-cols-3 gap-2">
                    {visibilityOptions.map(opt => (
                       <button
                         key={opt.value}
+                        type="button"
                         onClick={() => setVisibility(opt.value)}
-                        className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold transition-all border whitespace-nowrap
+                        className={`flex items-center justify-center gap-1.5 px-2 py-2 rounded-lg text-xs font-bold transition-all border min-w-0
                           ${visibility === opt.value 
                             ? 'bg-black dark:bg-white text-white dark:text-black border-black dark:border-white' 
                             : 'bg-white dark:bg-white/5 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-white/10'}`}
@@ -95,22 +131,36 @@ export const SaveBoardModal: React.FC<SaveBoardModalProps> = ({
 
                 <button 
                    onClick={handleCreate}
-                   className="bg-primary text-white w-full py-3 rounded-full font-bold hover:bg-red-700 transition-colors mt-1"
+                   disabled={!newCollectionName.trim() || pendingAction === 'create'}
+                   className={`w-full py-3 rounded-full font-bold transition-colors mt-1 ${!newCollectionName.trim() || pendingAction === 'create' ? 'bg-gray-200 dark:bg-white/10 text-gray-400' : 'bg-primary text-white hover:bg-red-700'}`}
                 >
-                   Create Board
+                   {pendingAction === 'create' ? 'Creating...' : 'Create Board'}
                 </button>
              </div>
+          )}
+
+          {error && (
+            <div className="mb-3 rounded-xl bg-red-50 dark:bg-red-900/20 px-3 py-2 text-sm font-medium text-red-700 dark:text-red-300">
+              {error}
+            </div>
           )}
 
           <div className="max-h-[300px] overflow-y-auto custom-scrollbar">
             {!isCreating && (
               <>
                 <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2">All boards</p>
-                {filteredCollections.map(col => (
+                {filteredCollections.length === 0 ? (
+                  <div className="py-10 text-center text-gray-500 dark:text-gray-400">
+                    <FolderOpen size={36} className="mx-auto mb-3 text-gray-300 dark:text-gray-600" />
+                    <p className="text-sm font-medium">
+                      {collections.length === 0 ? 'No boards yet.' : 'No boards match this search.'}
+                    </p>
+                  </div>
+                ) : filteredCollections.map(col => (
                   <div 
                     key={col.id} 
-                    onClick={() => onSaveToCollection(col.id)}
-                    className="flex items-center justify-between p-2 hover:bg-gray-100 dark:hover:bg-white/5 rounded-xl cursor-pointer group transition-colors"
+                    onClick={() => pendingAction ? undefined : handleSaveToCollection(col.id)}
+                    className={`flex items-center justify-between p-2 rounded-xl group transition-colors ${pendingAction ? 'cursor-wait opacity-70' : 'cursor-pointer hover:bg-gray-100 dark:hover:bg-white/5'}`}
                   >
                     <div className="flex items-center gap-3">
                       <div className="w-12 h-12 rounded-lg bg-gray-200 dark:bg-gray-700 overflow-hidden">
@@ -119,11 +169,15 @@ export const SaveBoardModal: React.FC<SaveBoardModalProps> = ({
                       <div className="flex flex-col">
                         <span className="font-bold text-gray-900 dark:text-white text-sm">{col.name}</span>
                         {col.visibility === 'private' && <span className="text-[10px] text-gray-500 flex items-center gap-1"><Lock size={10}/> Private</span>}
-                        {col.visibility === 'friends' && <span className="text-[10px] text-gray-500 flex items-center gap-1"><Users size={10}/> Friends</span>}
+                        {col.visibility === 'followers' && <span className="text-[10px] text-gray-500 flex items-center gap-1"><UserCheck size={10}/> Followers</span>}
                       </div>
                     </div>
-                    <button className="bg-primary text-white px-3 py-1.5 text-sm font-bold rounded-full opacity-0 group-hover:opacity-100 transition-opacity">
-                      Save
+                    <button
+                      type="button"
+                      disabled={Boolean(pendingAction)}
+                      className="bg-primary text-white px-3 py-1.5 text-sm font-bold rounded-full opacity-0 group-hover:opacity-100 transition-opacity disabled:bg-gray-300 disabled:text-gray-500"
+                    >
+                      {pendingAction === col.id ? 'Saving...' : 'Save'}
                     </button>
                   </div>
                 ))}

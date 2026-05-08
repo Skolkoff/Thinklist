@@ -1,7 +1,7 @@
 
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Collection, CollectionVisibility } from '../types';
-import { X, Lock, Globe, Users, UserCheck, Trash2 } from 'lucide-react';
+import { X, Lock, Globe, UserCheck, Trash2 } from 'lucide-react';
 
 interface EditCollectionModalProps {
   collection?: Collection; // Optional for Create Mode
@@ -14,9 +14,19 @@ interface EditCollectionModalProps {
 export const EditCollectionModal: React.FC<EditCollectionModalProps> = ({
   collection, onClose, onUpdate, onDelete, onCreate
 }) => {
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
   const isEditing = !!collection;
   const [name, setName] = useState(collection?.name || '');
   const [visibility, setVisibility] = useState<CollectionVisibility>(collection?.visibility || 'public');
+
+  useEffect(() => {
+    closeButtonRef.current?.focus();
+    const handleKeydown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeydown);
+    return () => window.removeEventListener('keydown', handleKeydown);
+  }, [onClose]);
 
   const handleSave = () => {
     if (!name.trim()) return;
@@ -35,7 +45,6 @@ export const EditCollectionModal: React.FC<EditCollectionModalProps> = ({
 
   const visibilityOptions: { value: CollectionVisibility; label: string; icon: React.ReactNode }[] = [
     { value: 'public', label: 'Public', icon: <Globe size={14} /> },
-    { value: 'friends', label: 'Friends', icon: <Users size={14} /> },
     { value: 'followers', label: 'Followers', icon: <UserCheck size={14} /> },
     { value: 'private', label: 'Private', icon: <Lock size={14} /> },
   ];
@@ -43,14 +52,17 @@ export const EditCollectionModal: React.FC<EditCollectionModalProps> = ({
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={onClose}>
       <div 
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="edit-board-title"
         className="bg-white dark:bg-dark-card rounded-2xl w-full max-w-sm flex flex-col shadow-2xl overflow-hidden transition-colors"
         onClick={e => e.stopPropagation()}
       >
         <div className="p-4 text-center border-b border-gray-100 dark:border-dark-border relative">
-          <h2 className="font-bold text-lg text-gray-900 dark:text-white">
+          <h2 id="edit-board-title" className="font-bold text-lg text-gray-900 dark:text-white">
             {isEditing ? 'Edit Board' : 'Create Board'}
           </h2>
-          <button onClick={onClose} className="absolute right-4 top-1/2 -translate-y-1/2 p-1.5 hover:bg-gray-100 dark:hover:bg-white/10 rounded-full text-gray-500 dark:text-gray-400">
+          <button ref={closeButtonRef} onClick={onClose} aria-label="Close board dialog" className="absolute right-4 top-1/2 -translate-y-1/2 p-1.5 hover:bg-gray-100 dark:hover:bg-white/10 rounded-full text-gray-500 dark:text-gray-400">
             <X size={20} />
           </button>
         </div>
