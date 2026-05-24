@@ -18,6 +18,13 @@ except ModuleNotFoundError:
 class DemoDataCounts:
     papers: int
     tags: int
+    target_total: int = 5000
+    target_reached: bool = False
+    scheduler_enabled: bool = False
+
+
+DEFAULT_MIN_PAPERS = 5000
+DEFAULT_MIN_TAGS = 80
 
 
 def should_run_ingestion(
@@ -57,10 +64,17 @@ def request_json(
 def fetch_counts(backend_url: str, min_papers: int, timeout: float) -> DemoDataCounts:
     backend = normalize_base_url(backend_url)
     tags_payload = request_json("GET", f"{backend}/tags", timeout=timeout)
-    feed_payload = request_json("GET", f"{backend}/feed?limit={min_papers}", timeout=timeout)
+    status_payload = request_json("GET", f"{backend}/admin/ingestion/status", timeout=timeout)
+    papers = int(status_payload.get("current_total") or 0)
+    if papers <= 0:
+        feed_payload = request_json("GET", f"{backend}/feed?limit={min_papers}", timeout=timeout)
+        papers = len(feed_payload.get("items") or [])
     return DemoDataCounts(
-        papers=len(feed_payload.get("items") or []),
+        papers=papers,
         tags=len(tags_payload.get("items") or []),
+        target_total=int(status_payload.get("target_total") or min_papers),
+        target_reached=bool(status_payload.get("target_reached")),
+        scheduler_enabled=bool(status_payload.get("scheduler_enabled")),
     )
 
 
@@ -78,7 +92,7 @@ def prepare_demo_data(
     print(f"Before: papers_at_least={before.papers}/{min_papers}, tags={before.tags}/{min_tags}")
 
     if should_run_ingestion(before.papers, before.tags, min_papers, min_tags):
-        print("Running arXiv ingestion...")
+        print("Running one incremental arXiv ingestion batch...")
         ingestion = request_json("POST", f"{backend}/admin/ingestion/run", timeout=timeout)
         print(f"Ingestion: {json.dumps(ingestion, ensure_ascii=False)}")
     else:
@@ -92,8 +106,13 @@ def prepare_demo_data(
     print(f"After: papers_at_least={after.papers}/{min_papers}, tags={after.tags}/{min_tags}")
 
     if should_run_ingestion(after.papers, after.tags, min_papers, min_tags):
-        print("Demo data is still below required minimums.", file=sys.stderr)
-        return 1
+        print(
+            "Demo data is still below the final target; background ingestion will continue accumulating batches.",
+            file=sys.stderr,
+        )
+        if not after.scheduler_enabled:
+            print("Background ingestion scheduler is disabled.", file=sys.stderr)
+            return 1
     return 0
 
 
@@ -101,8 +120,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Prepare Thinklist demo data and ML index.")
     parser.add_argument("--backend-url", default="http://localhost:8000")
     parser.add_argument("--ml-url", default="http://localhost:8001")
-    parser.add_argument("--min-papers", type=int, default=50)
-    parser.add_argument("--min-tags", type=int, default=10)
+    parser.add_argument("--min-papers", type=int, default=DEFAULT_MIN_PAPERS)
+    parser.add_argument("--min-tags", type=int, default=DEFAULT_MIN_TAGS)
     parser.add_argument("--timeout", type=float, default=60.0)
     args = parser.parse_args(argv)
 

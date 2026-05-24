@@ -181,6 +181,14 @@ docker compose up -d
 
 ### Ingestion (arXiv)
 
+Backend накапливает arXiv-статьи инкрементально:
+
+- цель: 5000 уникальных статей
+- batch: до 100 статей за итерацию
+- interval: 5 минут
+- широкий набор категорий arXiv для покрытия основных научных областей
+- статус: `GET /admin/ingestion/status`
+
 ```bash
 curl -X POST http://localhost:8000/admin/ingestion/run
 curl http://localhost:8000/admin/ingestion/status

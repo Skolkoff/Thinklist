@@ -10,6 +10,7 @@ import {
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 const TOKEN_KEY = 'thinklist_token';
 const AVATAR_CACHE_PREFIX = 'thinklist_avatar_';
+const ARTICLE_FETCH_LIMIT = 5000;
 
 const getToken = () => localStorage.getItem(TOKEN_KEY);
 const setToken = (token: string) => localStorage.setItem(TOKEN_KEY, token);
@@ -154,13 +155,13 @@ export const api = {
       const query = buildQuery({
         q: searchQuery.length >= 2 ? searchQuery : undefined,
         tags: tags || undefined,
-        limit: 100
+        limit: ARTICLE_FETCH_LIMIT
       });
       const response = await request<{ items: Article[] }>(`/search${query}`);
       return response.items.map(normalizeArticle);
     }
 
-    const query = buildQuery({ limit: 100 });
+    const query = buildQuery({ limit: ARTICLE_FETCH_LIMIT });
     const hasAuth = Boolean(getToken());
     const [feedResponse, savedResponse] = await Promise.all([
       request<{ items: Article[] }>(`/feed${query}`),

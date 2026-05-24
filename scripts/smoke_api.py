@@ -505,6 +505,50 @@ def run_hybrid_rank_flow(ml_url: str, timeout: float) -> CheckResult:
     )
 
 
+def run_ingestion_status_flow(backend_url: str, timeout: float) -> CheckResult:
+    backend = normalize_base_url(backend_url)
+    status, payload, body = request_json(
+        "GET",
+        f"{backend}/admin/ingestion/status",
+        timeout=timeout,
+    )
+    if status != 200:
+        return CheckResult(
+            "ingestion status",
+            False,
+            status,
+            f"status failed with {status}; body={body[:220]}",
+        )
+
+    required = [
+        "current_total",
+        "target_total",
+        "target_reached",
+        "scheduler_enabled",
+        "scheduler_running",
+        "next_run_at",
+    ]
+    missing = [key for key in required if key not in (payload or {})]
+    if missing:
+        return CheckResult(
+            "ingestion status",
+            False,
+            status,
+            f"missing keys {missing}; body={body[:220]}",
+        )
+
+    return CheckResult(
+        "ingestion status",
+        True,
+        200,
+        (
+            f"current_total={(payload or {}).get('current_total')} "
+            f"target_total={(payload or {}).get('target_total')} "
+            f"target_reached={(payload or {}).get('target_reached')}"
+        ),
+    )
+
+
 def build_checks(
     backend_url: str,
     ml_url: str,
@@ -591,6 +635,7 @@ def main(argv: list[str] | None = None) -> int:
         include_rebuild=args.include_rebuild,
     )
     results = [run_check(check, timeout=args.timeout) for check in checks]
+    results.append(run_ingestion_status_flow(args.backend_url, timeout=args.timeout))
     if args.include_collection_crud:
         results.append(run_collection_crud_flow(args.backend_url, timeout=args.timeout))
     if args.include_profile_update:

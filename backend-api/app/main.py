@@ -1,8 +1,10 @@
 from datetime import datetime, timedelta, timezone
+import asyncio
 import base64
 import hashlib
 import logging
 import secrets
+from contextlib import asynccontextmanager, suppress
 
 import httpx
 import jwt
@@ -15,8 +17,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import get_settings
-from app.db.session import get_db  # dependency для сессии БД
-from app.services.ingestion_arxiv import run_arxiv_ingestion
+from app.db.session import SessionLocal, get_db  # dependency для сессии БД
+from app.services.ingestion_arxiv import (
+    count_arxiv_papers,
+    run_arxiv_ingestion,
+    run_arxiv_ingestion_batch,
+)
 from app.models import (
     Event,
     EventType,
@@ -37,8 +43,9 @@ settings = get_settings()
 logger = logging.getLogger("app.feed")
 
 CANDIDATE_POOL_MIN = 500
-CANDIDATE_POOL_MAX = 3000
-CANDIDATE_POOL_DEFAULT = 1000
+CANDIDATE_POOL_MAX = 5000
+CANDIDATE_POOL_DEFAULT = 5000
+ARTICLE_FETCH_LIMIT_MAX = 5000
 LANGUAGE_PREFERENCES = {"system", "en", "ru"}
 
 
@@ -234,9 +241,69 @@ def _comment_to_dict(comment: ArticleComment, viewer_id: int | None = None) -> d
     }
 
 
+arxiv_scheduler_task: asyncio.Task | None = None
+arxiv_scheduler_running = False
+arxiv_scheduler_next_run_at: datetime | None = None
+
+
+async def _arxiv_ingestion_loop() -> None:
+    global arxiv_scheduler_running, arxiv_scheduler_next_run_at
+    arxiv_scheduler_running = True
+    arxiv_scheduler_next_run_at = datetime.now(timezone.utc) + timedelta(
+        seconds=settings.arxiv_ingestion_interval_seconds
+    )
+    try:
+        while True:
+            await asyncio.sleep(settings.arxiv_ingestion_interval_seconds)
+            db = SessionLocal()
+            try:
+                run_arxiv_ingestion_batch(
+                    db,
+                    batch_size=settings.arxiv_ingestion_batch_size,
+                    target_total=settings.arxiv_ingestion_target_total,
+                )
+            except Exception:
+                logger.exception("arxiv_ingestion_scheduler_failed")
+            finally:
+                db.close()
+
+            arxiv_scheduler_next_run_at = datetime.now(timezone.utc) + timedelta(
+                seconds=settings.arxiv_ingestion_interval_seconds
+            )
+    finally:
+        arxiv_scheduler_running = False
+        arxiv_scheduler_next_run_at = None
+
+
+def start_arxiv_ingestion_scheduler() -> None:
+    global arxiv_scheduler_task
+    if not settings.arxiv_ingestion_enabled:
+        return
+    if arxiv_scheduler_task is None or arxiv_scheduler_task.done():
+        arxiv_scheduler_task = asyncio.create_task(_arxiv_ingestion_loop())
+
+
+async def stop_arxiv_ingestion_scheduler() -> None:
+    global arxiv_scheduler_task
+    if arxiv_scheduler_task is None:
+        return
+    arxiv_scheduler_task.cancel()
+    with suppress(asyncio.CancelledError):
+        await arxiv_scheduler_task
+    arxiv_scheduler_task = None
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    start_arxiv_ingestion_scheduler()
+    yield
+    await stop_arxiv_ingestion_scheduler()
+
+
 app = FastAPI(
     title=settings.app_title,
     version=settings.app_version,
+    lifespan=lifespan,
 )
 
 if settings.cors_origins:
@@ -480,7 +547,7 @@ def _create_access_token(user: User) -> str:
 @app.get("/feed")
 def feed(
     request: Request,
-    limit: int = Query(20, ge=1, le=100),
+    limit: int = Query(20, ge=1, le=ARTICLE_FETCH_LIMIT_MAX),
     cursor: str | None = None,
     db: Session = Depends(get_db),
 ) -> dict:
@@ -662,7 +729,7 @@ def feed(
 def search(
     request: Request,
     q: str | None = Query(None, min_length=2),
-    limit: int = Query(20, ge=1, le=100),
+    limit: int = Query(20, ge=1, le=ARTICLE_FETCH_LIMIT_MAX),
     tags: list[str] | None = Query(None),
     source: str | None = None,
     db: Session = Depends(get_db),
@@ -1342,11 +1409,33 @@ def admin_run_ingestion(db=Depends(get_db)) -> dict:
 @app.get("/admin/ingestion/status")
 def admin_ingestion_status(db=Depends(get_db)) -> dict:
     """
-    Возвращает статус последнего запуска ingestion:
-    - источник
-    - время последнего запуска
-    - added / skipped / failed
+    Возвращает статус ingestion и прогресс накопления arXiv-статей.
     """
+    arxiv_source = (
+        db.query(Source)
+        .filter(Source.code == "arxiv", Source.type == "arxiv")
+        .one_or_none()
+    )
+    current_total = count_arxiv_papers(db, arxiv_source) if arxiv_source else 0
+    source_config = arxiv_source.config if arxiv_source else {}
+    target_total = int(
+        source_config.get("target_total")
+        or source_config.get("limit")
+        or settings.arxiv_ingestion_target_total
+    )
+    scheduler_payload = {
+        "scheduler_enabled": settings.arxiv_ingestion_enabled,
+        "scheduler_running": arxiv_scheduler_running,
+        "next_run_at": (
+            arxiv_scheduler_next_run_at.isoformat()
+            if arxiv_scheduler_next_run_at
+            else None
+        ),
+        "target_total": target_total,
+        "current_total": current_total,
+        "target_reached": current_total >= target_total,
+    }
+
     last_run: IngestionRun | None = (
         db.query(IngestionRun)
         .order_by(IngestionRun.started_at.desc())
@@ -1359,11 +1448,12 @@ def admin_ingestion_status(db=Depends(get_db)) -> dict:
             "added": 0,
             "skipped": 0,
             "failed": 0,
+            **scheduler_payload,
         }
 
     source: Source | None = None
     if last_run.source_id is not None:
-        source = db.query(Source).get(last_run.source_id)
+        source = db.get(Source, last_run.source_id)
 
     return {
         "last_run_at": last_run.finished_at or last_run.started_at,
@@ -1371,4 +1461,5 @@ def admin_ingestion_status(db=Depends(get_db)) -> dict:
         "added": last_run.added,
         "skipped": last_run.skipped,
         "failed": last_run.failed,
+        **scheduler_payload,
     }

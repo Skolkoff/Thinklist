@@ -60,6 +60,44 @@ class Settings:
             return []
         return [item.strip() for item in raw.split(",") if item.strip()]
 
+    @property
+    def arxiv_ingestion_enabled(self) -> bool:
+        raw = os.getenv("ARXIV_INGESTION_ENABLED", "1").strip().lower()
+        return raw in {"1", "true", "yes", "on"}
+
+    @property
+    def arxiv_ingestion_interval_seconds(self) -> int:
+        raw = os.getenv("ARXIV_INGESTION_INTERVAL_SECONDS", "300")
+        try:
+            value = int(raw)
+        except ValueError as exc:
+            raise RuntimeError("ARXIV_INGESTION_INTERVAL_SECONDS must be an integer") from exc
+        if value < 60:
+            raise RuntimeError("ARXIV_INGESTION_INTERVAL_SECONDS must be at least 60")
+        return value
+
+    @property
+    def arxiv_ingestion_batch_size(self) -> int:
+        raw = os.getenv("ARXIV_INGESTION_BATCH_SIZE", "100")
+        try:
+            value = int(raw)
+        except ValueError as exc:
+            raise RuntimeError("ARXIV_INGESTION_BATCH_SIZE must be an integer") from exc
+        if value <= 0 or value > 200:
+            raise RuntimeError("ARXIV_INGESTION_BATCH_SIZE must be between 1 and 200")
+        return value
+
+    @property
+    def arxiv_ingestion_target_total(self) -> int:
+        raw = os.getenv("ARXIV_INGESTION_TARGET_TOTAL", "5000")
+        try:
+            value = int(raw)
+        except ValueError as exc:
+            raise RuntimeError("ARXIV_INGESTION_TARGET_TOTAL must be an integer") from exc
+        if value < 100:
+            raise RuntimeError("ARXIV_INGESTION_TARGET_TOTAL must be at least 100")
+        return value
+
 
 @lru_cache
 def get_settings() -> Settings:
