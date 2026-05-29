@@ -5,7 +5,11 @@ from pydantic import BaseModel, Field
 
 from app.core.config import get_settings
 from app.db.session import check_db, fetch_papers_with_tags
-from app.services.recommender import rebuild_index, rank_candidates_hybrid
+from app.services.recommender import (
+    get_artifact_status,
+    rebuild_index,
+    rank_candidates_hybrid,
+)
 
 
 settings = get_settings()
@@ -42,7 +46,7 @@ async def health() -> dict:
     """
     if not check_db():
         raise HTTPException(status_code=503, detail="db_unavailable")
-    return {"status": "ok", "db": "ok"}
+    return {"status": "ok", "db": "ok", "artifact_status": get_artifact_status()}
 
 
 @app.post("/ml/rebuild")
@@ -95,6 +99,7 @@ def rank(payload: RankIn) -> dict:
                 "score": item.score,
                 "bucket": item.bucket,
                 "domain": item.domain,
+                "model": item.model,
                 "scores": item.scores,
                 "reasons": item.reasons,
             }

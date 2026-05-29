@@ -523,3 +523,19 @@ Feed Mix Policy = controlled 80/20 blend
 ```
 
 This gives Thinklist a clear, defensible recommendation architecture: accurate personal recommendations plus a measurable interdisciplinary discovery mechanism.
+
+## Implementation Note - 2026-05-29
+
+The first runtime integration pass is implemented inside `ml-service` with fallback-safe behavior.
+
+Implemented behavior:
+
+- `ML_ARTIFACTS_DIR` can override the artifact directory.
+- Default artifact layout is `ml-service/artifacts/project` and `ml-service/artifacts/cross_domain`.
+- `discovery_reranker_project_finetuned.pt` is used for core candidates when loadable.
+- `cross_domain_boosted_reranker.pt` is used for adjacent candidates when loadable.
+- `.npz` scaler files are optional and may provide `mean` and `scale` arrays.
+- If PyTorch, model files, scaler files, or inference are unavailable, the current TF-IDF/SVD hybrid fallback remains active.
+- `/health`, `/ml/rebuild`, and `/ml/rank` expose artifact/model metadata for demo and QA evidence.
+
+The backend still does not run neural inference directly. It continues to call `ml-service /ml/rank` and can ignore the new `model` field if not needed.

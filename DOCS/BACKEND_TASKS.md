@@ -178,5 +178,18 @@
 
 ---
 
+## Этап 15. Neural artifact integration
+
+- [x] T15.1 Добавить optional loader для trained `.pt` reranker artifacts
+- [x] T15.2 Поддержать `ML_ARTIFACTS_DIR` и стандартный layout `ml-service/artifacts`
+- [x] T15.3 Подключить project fine-tuned model для core candidates
+- [x] T15.4 Подключить cross-domain boost model для adjacent candidates
+- [x] T15.5 Сохранить fallback на текущий hybrid scorer при отсутствии артефактов
+- [x] T15.6 Вернуть artifact/model metadata в `/health`, `/ml/rebuild`, `/ml/rank`
+
+**DoD:** ML-service использует trained artifacts, когда они доступны, и продолжает стабильно ранжировать через hybrid fallback, когда файлы или PyTorch runtime отсутствуют.
+
+---
+
 ## Notes / Decisions
 (здесь Cursor может оставлять комментарии и решения)

@@ -1,5 +1,6 @@
 import os
 from functools import lru_cache
+from pathlib import Path
 
 
 class Settings:
@@ -15,6 +16,13 @@ class Settings:
         if not value:
             raise RuntimeError("DATABASE_URL is not set in environment")
         return value
+
+    @property
+    def artifacts_dir(self) -> Path:
+        value = os.getenv("ML_ARTIFACTS_DIR")
+        if value:
+            return Path(value)
+        return Path(__file__).resolve().parents[2] / "artifacts"
 
 
 @lru_cache

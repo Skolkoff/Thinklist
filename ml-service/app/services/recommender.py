@@ -11,10 +11,15 @@ from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.neural_network import MLPRegressor
 from sklearn.preprocessing import normalize
 
+from app.core.config import get_settings
 from app.services.domains import domains_for_tags, is_adjacent_domain
+from app.services.neural_artifacts import NeuralArtifactBundle, load_neural_artifacts
 
 MODEL_NAME = "tfidf-svd-mlp-reranker"
 CORE_RATIO_DEFAULT = 0.8
+PROJECT_MODEL_NAME = "project_finetuned"
+CROSS_DOMAIN_MODEL_NAME = "cross_domain_boost"
+FALLBACK_MODEL_NAME = "hybrid_fallback"
 
 
 @dataclass
@@ -36,6 +41,7 @@ class ModelState:
     id_to_index: dict[int, int] = field(default_factory=dict)
     paper_meta: dict[int, PaperMeta] = field(default_factory=dict)
     paper_tags: dict[int, list[str]] = field(default_factory=dict)
+    artifacts: NeuralArtifactBundle | None = None
     built_at: datetime | None = None
     semantic_backend: str = "unavailable"
 
@@ -46,11 +52,23 @@ class RankedPaper:
     score: float
     bucket: str
     domain: str | None
+    model: str
     scores: dict[str, float]
     reasons: list[str]
 
 
 STATE = ModelState()
+
+
+def get_artifact_status() -> dict[str, Any]:
+    if STATE.artifacts is None:
+        return {
+            "artifacts_dir": str(get_settings().artifacts_dir),
+            "torch_available": False,
+            "project": {"loaded": False, "error": "not_loaded"},
+            "cross_domain": {"loaded": False, "error": "not_loaded"},
+        }
+    return STATE.artifacts.status()
 
 
 def _normalize_row(row: Any) -> PaperMeta:
@@ -97,6 +115,7 @@ def rebuild_index(rows: Iterable[Any]) -> dict:
         paper_tags[meta.paper_id] = meta.tags
 
     built_at = datetime.now(timezone.utc)
+    artifacts = load_neural_artifacts(get_settings().artifacts_dir)
     if not documents:
         STATE.vectorizer = None
         STATE.matrix = None
@@ -105,6 +124,7 @@ def rebuild_index(rows: Iterable[Any]) -> dict:
         STATE.id_to_index = {}
         STATE.paper_meta = {}
         STATE.paper_tags = {}
+        STATE.artifacts = artifacts
         STATE.built_at = built_at
         STATE.semantic_backend = "empty"
         STATE.neural_reranker = None
@@ -115,6 +135,9 @@ def rebuild_index(rows: Iterable[Any]) -> dict:
             "embedding_model": MODEL_NAME,
             "semantic_backend": STATE.semantic_backend,
             "semantic_dimensions": 0,
+            "project_model_loaded": artifacts.project_model_loaded,
+            "cross_domain_model_loaded": artifacts.cross_domain_model_loaded,
+            "artifact_status": artifacts.status(),
         }
 
     vectorizer = TfidfVectorizer(stop_words="english")
@@ -135,6 +158,7 @@ def rebuild_index(rows: Iterable[Any]) -> dict:
     STATE.id_to_index = {paper_id: idx for idx, paper_id in enumerate(paper_ids)}
     STATE.paper_meta = paper_meta
     STATE.paper_tags = paper_tags
+    STATE.artifacts = artifacts
     STATE.built_at = built_at
     STATE.semantic_backend = semantic_backend
     STATE.neural_reranker = MLPRegressor(
@@ -157,6 +181,9 @@ def rebuild_index(rows: Iterable[Any]) -> dict:
         "embedding_model": MODEL_NAME,
         "semantic_backend": semantic_backend,
         "semantic_dimensions": semantic_dimensions,
+        "project_model_loaded": artifacts.project_model_loaded,
+        "cross_domain_model_loaded": artifacts.cross_domain_model_loaded,
+        "artifact_status": artifacts.status(),
     }
 
 
@@ -284,6 +311,33 @@ def _neural_scores(features: np.ndarray, baseline: np.ndarray) -> np.ndarray:
     return np.clip(predicted, 0.0, 1.0)
 
 
+def _artifact_backed_scores(
+    features: np.ndarray,
+    buckets: list[str],
+    fallback: np.ndarray,
+) -> tuple[np.ndarray, list[str]]:
+    scores = np.asarray(fallback, dtype=float).copy()
+    models = [FALLBACK_MODEL_NAME for _ in range(features.shape[0])]
+    artifacts = STATE.artifacts
+    if artifacts is None or features.shape[0] == 0:
+        return scores, models
+
+    for bucket, artifact, model_name in (
+        ("core", artifacts.project, PROJECT_MODEL_NAME),
+        ("adjacent", artifacts.cross_domain, CROSS_DOMAIN_MODEL_NAME),
+    ):
+        indices = [index for index, item_bucket in enumerate(buckets) if item_bucket == bucket]
+        if not indices:
+            continue
+        predicted = artifact.predict(features[indices])
+        if predicted is None or predicted.shape[0] != len(indices):
+            continue
+        for local_index, global_index in enumerate(indices):
+            scores[global_index] = float(predicted[local_index])
+            models[global_index] = model_name
+    return np.clip(scores, 0.0, 1.0), models
+
+
 def rank_candidates_hybrid(
     positive_ids: list[int],
     candidate_ids: list[int],
@@ -307,6 +361,7 @@ def rank_candidates_hybrid(
 
     feature_rows: list[list[float]] = []
     baseline_scores: list[float] = []
+    buckets: list[str] = []
     raw_items: list[tuple[int, PaperMeta, str, str | None, float, float, float, float, float]] = []
     for position, paper_id in enumerate(candidates):
         meta = STATE.paper_meta[paper_id]
@@ -340,6 +395,7 @@ def rank_candidates_hybrid(
             ]
         )
         baseline_scores.append(float(baseline_score))
+        buckets.append(bucket)
         raw_items.append(
             (
                 paper_id,
@@ -354,7 +410,10 @@ def rank_candidates_hybrid(
             )
         )
 
-    neural_scores = _neural_scores(np.asarray(feature_rows), np.asarray(baseline_scores))
+    features = np.asarray(feature_rows)
+    baseline = np.asarray(baseline_scores)
+    fallback_neural_scores = _neural_scores(features, baseline)
+    neural_scores, model_names = _artifact_backed_scores(features, buckets, fallback_neural_scores)
 
     ranked: list[RankedPaper] = []
     for index, raw in enumerate(raw_items):
@@ -373,6 +432,7 @@ def rank_candidates_hybrid(
         neural_score = float(neural_scores[index])
         final_score = 0.85 * baseline_scores[index] + 0.15 * neural_score
         scores = {
+            "baseline": round(float(baseline_scores[index]), 6),
             "semantic": round(semantic_similarity, 6),
             "tfidf": round(tfidf_similarity, 6),
             "interest": round(interest_score, 6),
@@ -387,6 +447,7 @@ def rank_candidates_hybrid(
                 score=round(float(final_score), 6),
                 bucket=bucket,
                 domain=domain,
+                model=model_names[index],
                 scores=scores,
                 reasons=_reasons(
                     bucket=bucket,
