@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { Article, FilterState } from '../types';
 import { Tag } from './Tag';
 import { MasonryGrid } from './MasonryGrid';
@@ -17,9 +17,15 @@ interface HomeFeedProps {
   onClearFilters: () => void;
   onOpenArticle: (article: Article) => void;
   onSaveArticle: (article: Article) => void;
+  loadingMore?: boolean;
+  hasMore?: boolean;
+  onLoadMore?: () => void;
   canInteract?: boolean;
   onRequireAuth?: () => void;
 }
+
+const RENDERED_ARTICLE_LIMIT = 240;
+const RENDER_INCREMENT = 60;
 
 export const HomeFeed: React.FC<HomeFeedProps> = ({
   articles,
@@ -31,10 +37,46 @@ export const HomeFeed: React.FC<HomeFeedProps> = ({
   onClearFilters,
   onOpenArticle,
   onSaveArticle,
+  loadingMore = false,
+  hasMore = false,
+  onLoadMore,
   canInteract = true,
   onRequireAuth
 }) => {
   const [isCloudOpen, setIsCloudOpen] = useState(false);
+  const [renderedArticleLimit, setRenderedArticleLimit] = useState(RENDERED_ARTICLE_LIMIT);
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
+  const visibleArticles = articles.slice(0, renderedArticleLimit);
+  const hiddenLoadedCount = Math.max(0, articles.length - visibleArticles.length);
+
+  useEffect(() => {
+    setRenderedArticleLimit(RENDERED_ARTICLE_LIMIT);
+  }, [filters.searchQuery, filters.selectedTags]);
+
+  const handleLoadMore = useCallback(() => {
+    if (hiddenLoadedCount > 0) {
+      setRenderedArticleLimit(prev => prev + RENDER_INCREMENT);
+      return;
+    }
+    if (hasMore && !loadingMore && onLoadMore) {
+      onLoadMore();
+    }
+  }, [hasMore, hiddenLoadedCount, loadingMore, onLoadMore]);
+
+  useEffect(() => {
+    if ((!hasMore && hiddenLoadedCount <= 0) || loadingMore) return;
+    const node = loadMoreRef.current;
+    if (!node) return;
+
+    const observer = new IntersectionObserver(entries => {
+      if (entries.some(entry => entry.isIntersecting)) {
+        handleLoadMore();
+      }
+    }, { rootMargin: '600px 0px' });
+
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [handleLoadMore, hasMore, hiddenLoadedCount, loadingMore]);
 
   // Calculate tag weights based on frequency in current articles
   const tagData = useMemo(() => {
@@ -155,19 +197,38 @@ export const HomeFeed: React.FC<HomeFeedProps> = ({
             </button>
           </div>
         ) : (
-          <MasonryGrid>
-              {articles.map(article => (
-                <ArticleCard 
-                  key={article.id} 
-                  article={article} 
-                  onOpen={onOpenArticle}
-                  onSave={onSaveArticle}
-                  locale={locale}
-                  canInteract={canInteract}
-                  onRequireAuth={onRequireAuth}
-                />
-              ))}
-            </MasonryGrid>
+          <>
+            <MasonryGrid>
+                {visibleArticles.map(article => (
+                  <ArticleCard 
+                    key={article.id} 
+                    article={article} 
+                    onOpen={onOpenArticle}
+                    onSave={onSaveArticle}
+                    locale={locale}
+                    canInteract={canInteract}
+                    onRequireAuth={onRequireAuth}
+                  />
+                ))}
+              </MasonryGrid>
+            {(hasMore || hiddenLoadedCount > 0) && (
+              <div ref={loadMoreRef} className="flex flex-col items-center gap-2 py-8 text-sm text-gray-500">
+                <button
+                  type="button"
+                  onClick={handleLoadMore}
+                  disabled={loadingMore}
+                  className="rounded-full bg-gray-100 px-4 py-2 font-semibold text-gray-600 transition-colors hover:bg-gray-200 disabled:cursor-wait disabled:opacity-60 dark:bg-white/10 dark:text-gray-300 dark:hover:bg-white/15"
+                >
+                  {loadingMore ? t(locale, 'feed.loadingMore') : t(locale, 'feed.loadMore')}
+                </button>
+                {hiddenLoadedCount > 0 && (
+                  <span className="px-4 text-center text-xs text-gray-400">
+                    {t(locale, 'feed.renderBudget', { count: hiddenLoadedCount })}
+                  </span>
+                )}
+              </div>
+            )}
+          </>
         )}
       </div>
     </>

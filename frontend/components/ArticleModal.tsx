@@ -3,6 +3,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Article, ArticleComment } from '../types';
 import { api } from '../services/api';
 import { Tag } from './Tag';
+import { ArticleCover } from './ArticleCover';
 import { 
   X, Share2, MoreHorizontal, ExternalLink, Quote, Heart, 
   Link as LinkIcon, Twitter, Linkedin, Check, MessageCircle, Send, Trash2
@@ -242,11 +243,7 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
 
         {/* Left: Image */}
         <div className="w-full md:w-1/2 h-44 sm:h-56 md:h-full bg-gray-100 dark:bg-black/50 relative shrink-0">
-          <img 
-            src={article.imageUrl} 
-            alt={article.title} 
-            className="w-full h-full object-cover"
-          />
+          <ArticleCover article={article} locale={locale} mode="modal" />
           <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent md:hidden" />
         </div>
 

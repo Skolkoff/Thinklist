@@ -1,6 +1,7 @@
 .DS_Store
 .idea/
 .vscode/
+DOCS/
 
 DOCS
 output/
@@ -57,6 +58,8 @@ build/
 # Docs
 # Keep DOCS/sprint as the project knowledge base. Ignore only local binary source docs by default.
 DOCS/*.docx
+~$*.docx
+**/~$*.docx
 !DOCS/
 !DOCS/sprint/
 !DOCS/sprint/**

@@ -6,10 +6,11 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 class ArticleSampleLimitTest(unittest.TestCase):
-    def test_frontend_requests_5000_articles(self):
+    def test_frontend_requests_small_article_pages(self):
         source = (REPO_ROOT / "frontend" / "services" / "api.ts").read_text(encoding="utf-8")
 
-        self.assertIn("ARTICLE_FETCH_LIMIT = 5000", source)
+        self.assertIn("ARTICLE_PAGE_SIZE = 60", source)
+        self.assertNotIn("ARTICLE_FETCH_LIMIT = 5000", source)
         self.assertNotIn("limit: 100", source)
 
     def test_backend_allows_5000_article_feed_and_search_limits(self):

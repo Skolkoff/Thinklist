@@ -10,7 +10,7 @@ import {
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 const TOKEN_KEY = 'thinklist_token';
 const AVATAR_CACHE_PREFIX = 'thinklist_avatar_';
-const ARTICLE_FETCH_LIMIT = 5000;
+const ARTICLE_PAGE_SIZE = 60;
 
 const getToken = () => localStorage.getItem(TOKEN_KEY);
 const setToken = (token: string) => localStorage.setItem(TOKEN_KEY, token);
@@ -84,7 +84,7 @@ const normalizeArticle = (article: Article): Article => {
   return {
     ...article,
     publishedAt: article.publishedAt || new Date().toISOString(),
-    imageUrl: article.imageUrl || `https://picsum.photos/seed/article-${article.id}/800/1000`,
+    imageUrl: article.imageUrl || '',
     tags: article.tags || [],
     authors: article.authors || [],
     likes: article.likes ?? 0,
@@ -92,6 +92,16 @@ const normalizeArticle = (article: Article): Article => {
     source: article.source || 'Unknown'
   };
 };
+
+interface ArticleListResponse {
+  items: Article[];
+  next_cursor?: string | null;
+}
+
+export interface ArticlePage {
+  items: Article[];
+  nextCursor: string | null;
+}
 
 const normalizeVisibility = (visibility: string | undefined): CollectionVisibility => {
   if (visibility === 'private' || visibility === 'followers') {
@@ -146,7 +156,7 @@ export const api = {
     return response.items || [];
   },
 
-  fetchArticles: async (filters: FilterState): Promise<Article[]> => {
+  fetchArticles: async (filters: FilterState, cursor?: string | null): Promise<ArticlePage> => {
     const searchQuery = filters.searchQuery.trim();
     const tags = filters.selectedTags.join(',');
 
@@ -155,24 +165,35 @@ export const api = {
       const query = buildQuery({
         q: searchQuery.length >= 2 ? searchQuery : undefined,
         tags: tags || undefined,
-        limit: ARTICLE_FETCH_LIMIT
+        limit: ARTICLE_PAGE_SIZE,
+        cursor: cursor || undefined
       });
-      const response = await request<{ items: Article[] }>(`/search${query}`);
-      return response.items.map(normalizeArticle);
+      const response = await request<ArticleListResponse>(`/search${query}`);
+      return {
+        items: response.items.map(normalizeArticle),
+        nextCursor: response.next_cursor || null
+      };
     }
 
-    const query = buildQuery({ limit: ARTICLE_FETCH_LIMIT });
+    const query = buildQuery({ limit: ARTICLE_PAGE_SIZE, cursor: cursor || undefined });
     const hasAuth = Boolean(getToken());
-    const [feedResponse, savedResponse] = await Promise.all([
-      request<{ items: Article[] }>(`/feed${query}`),
-      hasAuth ? request<{ items: Article[] }>('/me/saved') : Promise.resolve({ items: [] })
-    ]);
+    const feedResponse = await request<ArticleListResponse>(`/feed${query}`);
 
-    const merged = new Map<string, Article>();
-    feedResponse.items.forEach(item => merged.set(item.id, item));
-    savedResponse.items.forEach(item => merged.set(item.id, item));
+    if (!cursor && hasAuth) {
+      const savedResponse = await request<{ items: Article[] }>('/me/saved');
+      const merged = new Map<string, Article>();
+      feedResponse.items.forEach(item => merged.set(item.id, item));
+      savedResponse.items.forEach(item => merged.set(item.id, item));
+      return {
+        items: Array.from(merged.values()).map(normalizeArticle),
+        nextCursor: feedResponse.next_cursor || null
+      };
+    }
 
-    return Array.from(merged.values()).map(normalizeArticle);
+    return {
+      items: feedResponse.items.map(normalizeArticle),
+      nextCursor: feedResponse.next_cursor || null
+    };
   },
 
   getCollections: async (userId?: string): Promise<Collection[]> => {

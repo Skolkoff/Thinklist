@@ -153,5 +153,30 @@
 
 ---
 
+## Этап 13. Editorial article covers
+
+- [x] T13.1 Убрать random/picsum изображения из карточек статей
+- [x] T13.2 Добавить deterministic visual taxonomy по научным тегам
+- [x] T13.3 Сделать легкий HTML/CSS cover generator без backend image generation
+- [x] T13.4 Переиспользовать cover в карточке и article modal
+- [x] T13.5 Добавить contract tests и документацию этапа
+
+**DoD:** карточки и модальное окно показывают уникальные editorial covers по доменам без внешних картинок и серверной генерации.
+
+---
+
+## Этап 14. Tag localization and incremental feed loading
+
+- [x] T14.1 Перевести расширенный taxonomy тегов на ru/en
+- [x] T14.2 Добавить fallback labels для новых arXiv prefixes
+- [x] T14.3 Перевести теги во всех UI surfaces
+- [x] T14.4 Перевести frontend feed/search на cursor pagination
+- [x] T14.5 Добавить плавную дозагрузку через IntersectionObserver
+- [x] T14.6 Зафиксировать render budget и performance evidence
+
+**DoD:** фронт не запрашивает и не рендерит 5000 статей сразу, а все научные теги читаемы на русском и английском.
+
+---
+
 ## Notes / Decisions
 (здесь Cursor может оставлять комментарии и решения)

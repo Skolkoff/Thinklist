@@ -730,6 +730,7 @@ def search(
     request: Request,
     q: str | None = Query(None, min_length=2),
     limit: int = Query(20, ge=1, le=ARTICLE_FETCH_LIMIT_MAX),
+    cursor: str | None = None,
     tags: list[str] | None = Query(None),
     source: str | None = None,
     db: Session = Depends(get_db),
@@ -796,15 +797,42 @@ def search(
         )
         query = query.filter(~hidden_exists)
 
+    offset = 0
+    if cursor and rank is not None:
+        offset = _parse_ml_cursor(cursor)
+    elif cursor:
+        cursor_ts, cursor_id = _parse_cursor(cursor)
+        query = query.filter(
+            or_(
+                Paper.published_at < cursor_ts,
+                and_(Paper.published_at == cursor_ts, Paper.id < cursor_id),
+            )
+        )
+
     if rank is not None:
         query = query.order_by(rank.desc(), Paper.published_at.desc(), Paper.id.desc())
     else:
         query = query.order_by(Paper.published_at.desc(), Paper.id.desc())
 
-    papers = query.limit(limit).all()
-    like_map = _like_counts(db, [paper.id for paper in papers])
+    if rank is not None:
+        papers = query.offset(offset).limit(limit + 1).all()
+    else:
+        papers = query.limit(limit + 1).all()
 
-    return {"items": [_paper_to_article(paper, like_map) for paper in papers]}
+    items = papers[:limit]
+    like_map = _like_counts(db, [paper.id for paper in items])
+    next_cursor = None
+    if len(papers) > limit and items:
+        if rank is not None:
+            next_cursor = f"ml:{offset + len(items)}"
+        else:
+            last = items[-1]
+            next_cursor = f"{last.published_at.isoformat()}|{last.id}"
+
+    return {
+        "items": [_paper_to_article(paper, like_map) for paper in items],
+        "next_cursor": next_cursor,
+    }
 
 
 @app.get("/papers/{paper_id}")

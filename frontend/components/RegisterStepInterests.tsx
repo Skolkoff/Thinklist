@@ -1,5 +1,5 @@
 import React from 'react';
-import { getTopicLabel, Locale, t } from '../i18n';
+import { getTopicChipLabel, Locale, t } from '../i18n';
 
 interface RegisterStepInterestsProps {
   tags: string[];
@@ -40,7 +40,7 @@ export const RegisterStepInterests: React.FC<RegisterStepInterestsProps> = ({
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
             >
-              {getTopicLabel(tag, locale)}
+              {getTopicChipLabel(tag, locale)}
             </button>
           ))
         ) : (

@@ -4,6 +4,7 @@ import { Article } from '../types';
 import { api } from '../services/api';
 import { MoreHorizontal, Share2, Heart, ArrowUpRight } from 'lucide-react';
 import { Locale, t } from '../i18n';
+import { ArticleCover } from './ArticleCover';
 
 interface ArticleCardProps {
   article: Article;
@@ -68,12 +69,7 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({
       onClick={() => onOpen(article)}
     >
       <div className="relative overflow-hidden rounded-2xl bg-gray-100 dark:bg-white/5">
-        <img 
-          src={article.imageUrl} 
-          alt={article.title}
-          className="w-full object-cover transition-transform duration-500 group-hover:scale-105"
-          loading="lazy"
-        />
+        <ArticleCover article={article} locale={locale} mode="card" />
         
         {/* Hover Overlay Actions */}
         <div 

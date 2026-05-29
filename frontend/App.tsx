@@ -46,6 +46,9 @@ const App: React.FC = () => {
   const [collections, setCollections] = useState<Collection[]>([]);
   const [availableTags, setAvailableTags] = useState<string[]>(AVAILABLE_TAGS);
   const [loading, setLoading] = useState(true);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
   
   // Interaction State
   const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
@@ -121,9 +124,12 @@ const App: React.FC = () => {
   // Data Fetching
   const fetchContent = useCallback(async () => {
     setLoading(true);
+    setLoadingMore(false);
     try {
-      const fetchedArticles = await api.fetchArticles(filters);
-      setArticles(fetchedArticles);
+      const page = await api.fetchArticles(filters);
+      setArticles(page.items);
+      setNextCursor(page.nextCursor);
+      setHasMore(Boolean(page.nextCursor));
 
       if (currentUser) {
         const fetchedCollections = await api.getCollections(
@@ -135,6 +141,8 @@ const App: React.FC = () => {
       }
     } catch (error) {
       console.error("Failed to fetch data", error);
+      setNextCursor(null);
+      setHasMore(false);
     } finally {
       setLoading(false);
     }
@@ -145,6 +153,26 @@ const App: React.FC = () => {
       fetchContent();
     }
   }, [fetchContent, authStatus]);
+
+  const loadMoreArticles = useCallback(async () => {
+    if (!nextCursor || loadingMore || loading) return;
+    setLoadingMore(true);
+    try {
+      const page = await api.fetchArticles(filters, nextCursor);
+      setArticles(prev => {
+        // append new pages while deduplicating articles that may also be saved.
+        const merged = new Map(prev.map(article => [article.id, article]));
+        page.items.forEach(article => merged.set(article.id, article));
+        return Array.from(merged.values());
+      });
+      setNextCursor(page.nextCursor);
+      setHasMore(Boolean(page.nextCursor));
+    } catch (error) {
+      console.error("Failed to load more articles", error);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [filters, nextCursor, loadingMore, loading]);
 
   // Handle Profile Navigation
   const handleNavigateToProfile = async (userId: string) => {
@@ -353,6 +381,9 @@ const App: React.FC = () => {
             onClearFilters={() => setFilters({ searchQuery: '', selectedTags: [] })}
             onOpenArticle={setSelectedArticle}
             onSaveArticle={handleOpenSaveModal}
+            loadingMore={loadingMore}
+            hasMore={hasMore}
+            onLoadMore={loadMoreArticles}
             canInteract={Boolean(currentUser)}
             onRequireAuth={() => setShowAuthGate(true)}
           />
