@@ -1224,9 +1224,14 @@ def list_collections(
     db: Session = Depends(get_db),
 ) -> dict:
     target_user_id = user_id or current_user.id
+    loader_options = [selectinload(Collection.items)]
+    if include_items:
+        loader_options = [
+            selectinload(Collection.items).selectinload(CollectionItem.paper)
+        ]
     query = (
         db.query(Collection)
-        .options(selectinload(Collection.items).selectinload(CollectionItem.paper))
+        .options(*loader_options)
         .filter(Collection.user_id == target_user_id)
     )
     if target_user_id != current_user.id:

@@ -46,7 +46,10 @@ export const HomeFeed: React.FC<HomeFeedProps> = ({
   const [isCloudOpen, setIsCloudOpen] = useState(false);
   const [renderedArticleLimit, setRenderedArticleLimit] = useState(RENDERED_ARTICLE_LIMIT);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
-  const visibleArticles = articles.slice(0, renderedArticleLimit);
+  const visibleArticles = useMemo(
+    () => articles.slice(0, renderedArticleLimit),
+    [articles, renderedArticleLimit]
+  );
   const hiddenLoadedCount = Math.max(0, articles.length - visibleArticles.length);
 
   useEffect(() => {
@@ -83,7 +86,7 @@ export const HomeFeed: React.FC<HomeFeedProps> = ({
     const counts: Record<string, number> = {};
     
     // Count occurrences
-    articles.forEach(article => {
+    visibleArticles.forEach(article => {
       article.tags.forEach(tag => {
         counts[tag] = (counts[tag] || 0) + 1;
       });
@@ -93,7 +96,7 @@ export const HomeFeed: React.FC<HomeFeedProps> = ({
 
     const tags = availableTags.length
       ? availableTags
-      : Array.from(new Set(articles.flatMap(article => article.tags))).sort();
+      : Array.from(new Set(visibleArticles.flatMap(article => article.tags))).sort();
 
     return tags
       .map(tag => {
@@ -114,7 +117,7 @@ export const HomeFeed: React.FC<HomeFeedProps> = ({
         if (b.count !== a.count) return b.count - a.count;
         return a.tag.localeCompare(b.tag);
       });
-  }, [articles, availableTags, filters.selectedTags]);
+  }, [visibleArticles, availableTags, filters.selectedTags]);
 
   return (
     <>

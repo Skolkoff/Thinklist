@@ -176,19 +176,7 @@ export const api = {
     }
 
     const query = buildQuery({ limit: ARTICLE_PAGE_SIZE, cursor: cursor || undefined });
-    const hasAuth = Boolean(getToken());
     const feedResponse = await request<ArticleListResponse>(`/feed${query}`);
-
-    if (!cursor && hasAuth) {
-      const savedResponse = await request<{ items: Article[] }>('/me/saved');
-      const merged = new Map<string, Article>();
-      feedResponse.items.forEach(item => merged.set(item.id, item));
-      savedResponse.items.forEach(item => merged.set(item.id, item));
-      return {
-        items: Array.from(merged.values()).map(normalizeArticle),
-        nextCursor: feedResponse.next_cursor || null
-      };
-    }
 
     return {
       items: feedResponse.items.map(normalizeArticle),
