@@ -31,8 +31,8 @@ export const Tag: React.FC<TagProps> = ({ label, selected, onClick, size = 'md',
       <span className="min-w-0 truncate whitespace-nowrap">{label}</span>
       {count !== undefined && count > 0 && (
         <span className={`
-          rounded-full flex items-center justify-center bg-black/10 dark:bg-white/20 
-          ${size === 'lg' ? 'w-6 h-6 text-xs' : 'w-4 h-4 text-[10px]'}
+          rounded-full flex h-4 min-w-4 items-center justify-center bg-black/10 px-1 text-[10px] dark:bg-white/20
+          ${size === 'lg' ? 'h-6 min-w-6 text-xs' : ''}
         `}>
           {count}
         </span>

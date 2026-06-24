@@ -45,6 +45,7 @@ const App: React.FC = () => {
   const [articles, setArticles] = useState<Article[]>([]);
   const [collections, setCollections] = useState<Collection[]>([]);
   const [availableTags, setAvailableTags] = useState<string[]>(AVAILABLE_TAGS);
+  const [tagCounts, setTagCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -130,6 +131,7 @@ const App: React.FC = () => {
       setArticles(page.items);
       setNextCursor(page.nextCursor);
       setHasMore(Boolean(page.nextCursor));
+      setTagCounts(page.tagCounts);
 
       if (currentUser) {
         const fetchedCollections = await api.getCollections(
@@ -143,6 +145,7 @@ const App: React.FC = () => {
       console.error("Failed to fetch data", error);
       setNextCursor(null);
       setHasMore(false);
+      setTagCounts({});
     } finally {
       setLoading(false);
     }
@@ -167,6 +170,7 @@ const App: React.FC = () => {
       });
       setNextCursor(page.nextCursor);
       setHasMore(Boolean(page.nextCursor));
+      setTagCounts(page.tagCounts);
     } catch (error) {
       console.error("Failed to load more articles", error);
     } finally {
@@ -374,6 +378,7 @@ const App: React.FC = () => {
           <HomeFeed 
             articles={articles}
             availableTags={availableTags}
+            tagCounts={tagCounts}
             locale={locale}
             loading={loading}
             filters={filters}

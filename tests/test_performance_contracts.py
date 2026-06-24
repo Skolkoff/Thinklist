@@ -43,7 +43,32 @@ class PerformanceContractsTest(unittest.TestCase):
         self.assertNotIn("savedResponse", body)
         self.assertNotIn("/me/saved", body)
 
-    def test_home_feed_counts_tags_from_visible_articles(self) -> None:
+    def test_feed_and_search_return_full_result_tag_counts(self) -> None:
+        source = (ROOT / "backend-api" / "app" / "main.py").read_text(
+            encoding="utf-8"
+        )
+        feed_start = source.index("def feed(")
+        search_start = source.index("def search(")
+        feed_body = source[feed_start:search_start]
+        search_body = source[search_start:source.index("@app.get(\"/papers", search_start)]
+
+        self.assertIn("_tag_counts_for_paper_query", source)
+        self.assertIn('"tag_counts": tag_counts', feed_body)
+        self.assertIn('"tag_counts": tag_counts', search_body)
+
+    def test_frontend_persists_article_page_tag_counts(self) -> None:
+        api = (ROOT / "frontend" / "services" / "api.ts").read_text(
+            encoding="utf-8"
+        )
+        app = (ROOT / "frontend" / "App.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("tag_counts?: Record<string, number>", api)
+        self.assertIn("tagCounts: response.tag_counts || {}", api)
+        self.assertIn("const [tagCounts, setTagCounts]", app)
+        self.assertIn("setTagCounts(page.tagCounts)", app)
+        self.assertIn("tagCounts={tagCounts}", app)
+
+    def test_home_feed_counts_tags_from_backend_totals(self) -> None:
         source = (ROOT / "frontend" / "components" / "HomeFeed.tsx").read_text(
             encoding="utf-8"
         )
@@ -51,8 +76,10 @@ class PerformanceContractsTest(unittest.TestCase):
         end = source.index("return (", start)
         body = source[start:end]
 
-        self.assertIn("visibleArticles.forEach", body)
-        self.assertIn("visibleArticles.flatMap", body)
+        self.assertIn("tagCounts", source)
+        self.assertIn("Object.values(tagCounts)", body)
+        self.assertIn("const count = tagCounts[tag] || 0", body)
+        self.assertNotIn("visibleArticles.forEach", body)
         self.assertNotIn("articles.forEach", body)
 
 

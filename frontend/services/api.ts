@@ -96,11 +96,13 @@ const normalizeArticle = (article: Article): Article => {
 interface ArticleListResponse {
   items: Article[];
   next_cursor?: string | null;
+  tag_counts?: Record<string, number>;
 }
 
 export interface ArticlePage {
   items: Article[];
   nextCursor: string | null;
+  tagCounts: Record<string, number>;
 }
 
 const normalizeVisibility = (visibility: string | undefined): CollectionVisibility => {
@@ -171,7 +173,8 @@ export const api = {
       const response = await request<ArticleListResponse>(`/search${query}`);
       return {
         items: response.items.map(normalizeArticle),
-        nextCursor: response.next_cursor || null
+        nextCursor: response.next_cursor || null,
+        tagCounts: response.tag_counts || {}
       };
     }
 
@@ -180,7 +183,8 @@ export const api = {
 
     return {
       items: feedResponse.items.map(normalizeArticle),
-      nextCursor: feedResponse.next_cursor || null
+      nextCursor: feedResponse.next_cursor || null,
+      tagCounts: feedResponse.tag_counts || {}
     };
   },
 

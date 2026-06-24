@@ -10,6 +10,7 @@ import { getTopicChipLabel, Locale, t } from '../i18n';
 interface HomeFeedProps {
   articles: Article[];
   availableTags: string[];
+  tagCounts: Record<string, number>;
   locale: Locale;
   loading: boolean;
   filters: FilterState;
@@ -30,6 +31,7 @@ const RENDER_INCREMENT = 60;
 export const HomeFeed: React.FC<HomeFeedProps> = ({
   articles,
   availableTags,
+  tagCounts,
   locale,
   loading,
   filters,
@@ -81,18 +83,9 @@ export const HomeFeed: React.FC<HomeFeedProps> = ({
     return () => observer.disconnect();
   }, [handleLoadMore, hasMore, hiddenLoadedCount, loadingMore]);
 
-  // Calculate tag weights based on frequency in current articles
+  // Calculate tag weights from backend totals, not the current page.
   const tagData = useMemo(() => {
-    const counts: Record<string, number> = {};
-    
-    // Count occurrences
-    visibleArticles.forEach(article => {
-      article.tags.forEach(tag => {
-        counts[tag] = (counts[tag] || 0) + 1;
-      });
-    });
-
-    const maxCount = Math.max(...Object.values(counts), 1);
+    const maxCount = Math.max(...Object.values(tagCounts), 1);
 
     const tags = availableTags.length
       ? availableTags
@@ -100,7 +93,7 @@ export const HomeFeed: React.FC<HomeFeedProps> = ({
 
     return tags
       .map(tag => {
-        const count = counts[tag] || 0;
+        const count = tagCounts[tag] || 0;
         let size: 'sm' | 'md' | 'lg' = 'sm';
         
         // Dynamic sizing logic relative to the most frequent tag
@@ -117,7 +110,7 @@ export const HomeFeed: React.FC<HomeFeedProps> = ({
         if (b.count !== a.count) return b.count - a.count;
         return a.tag.localeCompare(b.tag);
       });
-  }, [visibleArticles, availableTags, filters.selectedTags]);
+  }, [tagCounts, visibleArticles, availableTags, filters.selectedTags]);
 
   return (
     <>
@@ -166,10 +159,11 @@ export const HomeFeed: React.FC<HomeFeedProps> = ({
               ) : (
                 // Compact Horizontal Scroll View
                 <div className="flex shrink-0 items-center gap-2 overflow-x-auto no-scrollbar pb-4">
-                  {tagData.map(({ tag }) => (
+                  {tagData.map(({ tag, count }) => (
                     <Tag 
                       key={tag} 
                       label={getTopicChipLabel(tag, locale)} 
+                      count={count}
                       selected={filters.selectedTags.includes(tag)}
                       onClick={() => onTagToggle(tag)}
                     />

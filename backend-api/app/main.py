@@ -28,6 +28,7 @@ from app.models import (
     EventType,
     IngestionRun,
     Paper,
+    PaperTag,
     ArticleComment,
     CommentReaction,
     Collection,
@@ -159,6 +160,19 @@ def _like_counts(db: Session, paper_ids: list[int]) -> dict[int, int]:
         .all()
     )
     return {row[0]: row[1] for row in rows}
+
+
+def _tag_counts_for_paper_query(db: Session, paper_query) -> dict[str, int]:
+    paper_ids = paper_query.with_entities(Paper.id).order_by(None).distinct().subquery()
+    rows = (
+        db.query(Tag.name, func.count(func.distinct(PaperTag.paper_id)))
+        .join(PaperTag, PaperTag.tag_id == Tag.id)
+        .join(paper_ids, PaperTag.paper_id == paper_ids.c.id)
+        .group_by(Tag.name)
+        .order_by(Tag.name.asc())
+        .all()
+    )
+    return {row[0]: int(row[1]) for row in rows}
 
 
 def _paper_to_article(paper: Paper, like_map: dict[int, int]) -> dict:
@@ -611,6 +625,7 @@ def feed(
             else:
                 query = query.filter(Paper.id.in_(candidate_ids))
 
+            tag_counts = _tag_counts_for_paper_query(db, query)
             if candidate_ids:
                 positive_ids = [
                     row[0]
@@ -693,10 +708,12 @@ def feed(
                             _paper_to_article(paper, like_map) for paper in items
                         ],
                         "next_cursor": next_cursor,
+                        "tag_counts": tag_counts,
                     }
         else:
             query = query.filter(~hidden_exists)
 
+    tag_counts = _tag_counts_for_paper_query(db, query)
     if cursor:
         cursor_ts, cursor_id = _parse_cursor(cursor)
         query = query.filter(
@@ -722,6 +739,7 @@ def feed(
     return {
         "items": [_paper_to_article(paper, like_map) for paper in items],
         "next_cursor": next_cursor,
+        "tag_counts": tag_counts,
     }
 
 
@@ -797,6 +815,7 @@ def search(
         )
         query = query.filter(~hidden_exists)
 
+    tag_counts = _tag_counts_for_paper_query(db, query)
     offset = 0
     if cursor and rank is not None:
         offset = _parse_ml_cursor(cursor)
@@ -832,6 +851,7 @@ def search(
     return {
         "items": [_paper_to_article(paper, like_map) for paper in items],
         "next_cursor": next_cursor,
+        "tag_counts": tag_counts,
     }
 
 
